@@ -1,0 +1,8 @@
+.git
+.venv311
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+artifacts/models/.cache
+artifacts/images

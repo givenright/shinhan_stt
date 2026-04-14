@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Nemotron Streaming Gateway</title>
+  <style>
+    body { margin: 0; font-family: "Segoe UI", sans-serif; background: #f5efe4; color: #1f2633; }
+    .shell { max-width: 1240px; margin: 0 auto; padding: 24px 18px 32px; }
+    .grid { display: grid; grid-template-columns: 1.1fr 1fr; gap: 20px; }
+    .stack { display: grid; gap: 20px; }
+    .card { background: rgba(255,255,255,.88); border: 1px solid rgba(31,38,51,.12); border-radius: 24px; box-shadow: 0 18px 40px rgba(31,38,51,.1); }
+    .pad { padding: 24px; }
+    h1 { margin: 14px 0 10px; font-size: 44px; line-height: 1.02; letter-spacing: -.04em; }
+    p { color: #667085; line-height: 1.7; }
+    .eyebrow { display: inline-block; padding: 7px 12px; border-radius: 999px; background: rgba(15,118,110,.12); color: #0f766e; font-size: 12px; font-weight: 800; text-transform: uppercase; }
+    .field { margin-bottom: 12px; }
+    .field label { display: block; margin-bottom: 6px; font-size: 12px; font-weight: 700; color: #667085; text-transform: uppercase; }
+    .field input { width: 100%; padding: 14px 16px; border-radius: 16px; border: 1px solid rgba(31,38,51,.12); font-size: 14px; }
+    .actions { display: flex; gap: 10px; margin-top: 14px; }
+    button { border: 0; border-radius: 16px; padding: 14px 18px; font-weight: 800; cursor: pointer; }
+    .primary { flex: 1; background: linear-gradient(135deg, #0f766e, #115e59); color: white; }
+    .secondary { background: rgba(31,38,51,.06); }
+    .status { margin-top: 12px; padding: 12px 14px; border-radius: 16px; background: rgba(255,255,255,.8); min-height: 22px; color: #667085; }
+    .video { position: relative; padding-top: 56.25%; overflow: hidden; border-radius: 20px; background: #0f172a; }
+    .video iframe, .video .placeholder { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; }
+    .placeholder { display: flex; align-items: center; justify-content: center; color: #dbe4f0; text-align: center; padding: 24px; line-height: 1.7; }
+    .box { min-height: 120px; padding: 16px; border-radius: 20px; border: 1px solid rgba(31,38,51,.10); background: #fffdfa; }
+    .mini { margin-bottom: 10px; font-size: 11px; font-weight: 800; color: #667085; text-transform: uppercase; letter-spacing: .08em; }
+    .text { font-size: 18px; line-height: 1.7; }
+    .draft { background: rgba(15,118,110,.05); border-style: dashed; }
+    .feed { display: grid; gap: 12px; max-height: 720px; overflow: auto; }
+    .segment { padding: 16px; border-radius: 18px; border: 1px solid rgba(31,38,51,.10); background: #fffdfa; }
+    .head { display: flex; justify-content: space-between; color: #667085; font-size: 12px; font-weight: 700; margin-bottom: 8px; }
+    .ko { margin-bottom: 10px; font-size: 18px; line-height: 1.65; }
+    .en { padding-top: 10px; border-top: 1px solid rgba(31,38,51,.08); color: #667085; line-height: 1.65; }
+    @media (max-width: 920px) { .grid { grid-template-columns: 1fr; } }
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <div class="grid">
+      <section class="stack">
+        <article class="card pad">
+          <span class="eyebrow">Nemotron Gateway</span>
+          <h1>실시간 영문 초안과<br>확정 번역을 분리합니다.</h1>
+          <p>URL 오디오를 게이트웨이가 추출하고, Linux GPU Nemotron STT 서비스가 partial/final 영문을 생성한 뒤 최종 한국어 번역을 누적합니다.</p>
+        </article>
+        <article class="card pad">
+          <div class="field">
+            <label>Video / Audio URL</label>
+            <input id="streamUrl" type="url" placeholder="https://youtube.com/watch?v=...">
+          </div>
+          <div class="field">
+            <label>Gateway WebSocket</label>
+            <input id="wsUrl" type="text">
+          </div>
+          <div class="actions">
+            <button class="primary" id="startBtn">Start Session</button>
+            <button class="secondary" id="stopBtn">Stop</button>
+          </div>
+          <div class="status" id="status">서버에 연결한 뒤 URL 세션을 시작하세요.</div>
+        </article>
+        <article class="card pad">
+          <div class="video" id="videoShell"><div class="placeholder">유튜브 URL이면 여기에 영상이 같이 표시됩니다.</div></div>
+        </article>
+      </section>
+      <section class="stack">
+        <article class="card pad">
+          <div class="box">
+            <div class="mini">Latest Final English</div>
+            <div class="text" id="liveEnglish">아직 확정 영문이 없습니다.</div>
+          </div>
+          <div class="box draft" style="margin-top:12px">
+            <div class="mini">Partial English Draft</div>
+            <div class="text" id="partialEnglish">말하는 동안 초안이 여기에 표시됩니다.</div>
+          </div>
+          <div class="box" style="margin-top:12px">
+            <div class="mini">Latest Final Korean</div>
+            <div class="text" id="liveKorean">아직 확정 번역이 없습니다.</div>
+          </div>
+        </article>
+        <article class="card pad">
+          <div class="mini">Segment Feed</div>
+          <div class="feed" id="feed"></div>
+        </article>
+      </section>
+    </div>
+  </div>
+  <script>
+    const wsInput = document.getElementById("wsUrl");
+    const streamUrlInput = document.getElementById("streamUrl");
+    const statusEl = document.getElementById("status");
+    const liveEnglish = document.getElementById("liveEnglish");
+    const partialEnglish = document.getElementById("partialEnglish");
+    const liveKorean = document.getElementById("liveKorean");
+    const feed = document.getElementById("feed");
+    const videoShell = document.getElementById("videoShell");
+    wsInput.value = `ws://${location.host}/ws/ui`;
+    let ws = null;
+    const segments = new Map();
+
+    function esc(text) {
+      return String(text).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+    }
+    function setStatus(text) { statusEl.textContent = text; }
+    function parseYoutubeId(url) {
+      try {
+        const parsed = new URL(url);
+        if (parsed.hostname.includes("youtu.be")) return parsed.pathname.slice(1);
+        if (parsed.hostname.includes("youtube.com")) return parsed.searchParams.get("v") || "";
+      } catch { return ""; }
+      return "";
+    }
+    function setPreview(url) {
+      const id = parseYoutubeId(url);
+      if (!id) {
+        videoShell.innerHTML = '<div class="placeholder">유튜브가 아니면 영상은 표시하지 않고 오디오만 처리합니다.</div>';
+        return;
+      }
+      videoShell.innerHTML = `<iframe src="https://www.youtube.com/embed/${id}?autoplay=1&rel=0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe>`;
+    }
+    function renderFeed() {
+      const items = [...segments.values()].sort((a, b) => a.seq - b.seq);
+      feed.innerHTML = items.map(item => `<article class="segment"><div class="head"><span>${item.id}</span></div><div class="ko">${item.ko || "번역 대기 중..."}</div><div class="en">${item.en || "영문 대기 중..."}</div></article>`).join("");
+    }
+    function resetUi() {
+      segments.clear();
+      liveEnglish.textContent = "아직 확정 영문이 없습니다.";
+      partialEnglish.textContent = "말하는 동안 초안이 여기에 표시됩니다.";
+      liveKorean.textContent = "아직 확정 번역이 없습니다.";
+      feed.innerHTML = "";
+    }
+    function connect() {
+      if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) return;
+      ws = new WebSocket(wsInput.value.trim());
+      ws.onopen = () => setStatus("연결되었습니다. URL 세션을 시작할 수 있습니다.");
+      ws.onmessage = (event) => {
+        const payload = JSON.parse(event.data);
+        if (payload.type === "reset") {
+          resetUi();
+        } else if (payload.type === "status") {
+          setStatus(payload.message);
+        } else if (payload.type === "error") {
+          setStatus(payload.message);
+        } else if (payload.type === "partial") {
+          partialEnglish.textContent = payload.text || "말하는 동안 초안이 여기에 표시됩니다.";
+        } else if (payload.type === "segment") {
+          const item = segments.get(payload.segment_id) || { id: payload.segment_id, seq: payload.seq, en: "", ko: "" };
+          if (payload.phase === "final_en") {
+            item.en = esc(payload.text);
+            liveEnglish.textContent = payload.text;
+          } else if (payload.phase === "final_ko") {
+            item.ko = esc(payload.text);
+            liveKorean.textContent = payload.text;
+          }
+          segments.set(payload.segment_id, item);
+          renderFeed();
+        }
+      };
+      ws.onclose = () => setStatus("연결이 종료되었습니다.");
+      ws.onerror = () => setStatus("WebSocket 오류가 발생했습니다.");
+    }
+    document.getElementById("startBtn").addEventListener("click", () => {
+      const url = streamUrlInput.value.trim();
+      if (!url) { setStatus("먼저 URL을 입력하세요."); return; }
+      setPreview(url);
+      connect();
+      const send = () => ws.send(JSON.stringify({ type: "start", url }));
+      if (ws.readyState === WebSocket.OPEN) send(); else ws.addEventListener("open", send, { once: true });
+    });
+    document.getElementById("stopBtn").addEventListener("click", () => {
+      if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: "stop" }));
+    });
+  </script>
+</body>
+</html>
