@@ -3,174 +3,449 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Nemotron Streaming Gateway</title>
+  <title>Shinhan Live STT</title>
   <style>
-    body { margin: 0; font-family: "Segoe UI", sans-serif; background: #f5efe4; color: #1f2633; }
-    .shell { max-width: 1240px; margin: 0 auto; padding: 24px 18px 32px; }
-    .grid { display: grid; grid-template-columns: 1.1fr 1fr; gap: 20px; }
-    .stack { display: grid; gap: 20px; }
-    .card { background: rgba(255,255,255,.88); border: 1px solid rgba(31,38,51,.12); border-radius: 24px; box-shadow: 0 18px 40px rgba(31,38,51,.1); }
-    .pad { padding: 24px; }
-    h1 { margin: 14px 0 10px; font-size: 44px; line-height: 1.02; letter-spacing: -.04em; }
-    p { color: #667085; line-height: 1.7; }
-    .eyebrow { display: inline-block; padding: 7px 12px; border-radius: 999px; background: rgba(15,118,110,.12); color: #0f766e; font-size: 12px; font-weight: 800; text-transform: uppercase; }
-    .field { margin-bottom: 12px; }
-    .field label { display: block; margin-bottom: 6px; font-size: 12px; font-weight: 700; color: #667085; text-transform: uppercase; }
-    .field input { width: 100%; padding: 14px 16px; border-radius: 16px; border: 1px solid rgba(31,38,51,.12); font-size: 14px; }
-    .actions { display: flex; gap: 10px; margin-top: 14px; }
-    button { border: 0; border-radius: 16px; padding: 14px 18px; font-weight: 800; cursor: pointer; }
-    .primary { flex: 1; background: linear-gradient(135deg, #0f766e, #115e59); color: white; }
-    .secondary { background: rgba(31,38,51,.06); }
-    .status { margin-top: 12px; padding: 12px 14px; border-radius: 16px; background: rgba(255,255,255,.8); min-height: 22px; color: #667085; }
-    .video { position: relative; padding-top: 56.25%; overflow: hidden; border-radius: 20px; background: #0f172a; }
-    .video iframe, .video .placeholder { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; }
-    .placeholder { display: flex; align-items: center; justify-content: center; color: #dbe4f0; text-align: center; padding: 24px; line-height: 1.7; }
-    .box { min-height: 120px; padding: 16px; border-radius: 20px; border: 1px solid rgba(31,38,51,.10); background: #fffdfa; }
-    .mini { margin-bottom: 10px; font-size: 11px; font-weight: 800; color: #667085; text-transform: uppercase; letter-spacing: .08em; }
-    .text { font-size: 18px; line-height: 1.7; }
-    .draft { background: rgba(15,118,110,.05); border-style: dashed; }
-    .feed { display: grid; gap: 12px; max-height: 720px; overflow: auto; }
-    .segment { padding: 16px; border-radius: 18px; border: 1px solid rgba(31,38,51,.10); background: #fffdfa; }
-    .head { display: flex; justify-content: space-between; color: #667085; font-size: 12px; font-weight: 700; margin-bottom: 8px; }
-    .ko { margin-bottom: 10px; font-size: 18px; line-height: 1.65; }
-    .en { padding-top: 10px; border-top: 1px solid rgba(31,38,51,.08); color: #667085; line-height: 1.65; }
-    @media (max-width: 920px) { .grid { grid-template-columns: 1fr; } }
+    :root {
+      --bg: #f7f8fa;
+      --ink: #171923;
+      --muted: #667085;
+      --line: #d9dee7;
+      --panel: #ffffff;
+      --green: #0f766e;
+      --red: #c2410c;
+      --yellow: #facc15;
+      --black: #101828;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: Arial, "Noto Sans KR", sans-serif;
+      background: var(--bg);
+      color: var(--ink);
+    }
+    main {
+      width: min(1280px, 100%);
+      margin: 0 auto;
+      padding: 18px;
+    }
+    .topbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      padding: 14px 0 18px;
+      border-bottom: 1px solid var(--line);
+      margin-bottom: 18px;
+    }
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      min-width: 0;
+    }
+    .mark {
+      width: 36px;
+      height: 36px;
+      border-radius: 8px;
+      background: var(--green);
+      display: grid;
+      place-items: center;
+      color: #fff;
+      font-weight: 800;
+      flex: 0 0 auto;
+    }
+    h1 {
+      margin: 0;
+      font-size: 24px;
+      line-height: 1.2;
+      letter-spacing: 0;
+    }
+    .sub {
+      margin: 3px 0 0;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.5;
+    }
+    .badge {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 8px 10px;
+      background: #fff;
+      color: var(--muted);
+      font-size: 12px;
+      white-space: nowrap;
+    }
+    .layout {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) minmax(360px, 0.82fr);
+      gap: 18px;
+      align-items: start;
+    }
+    .section {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+    }
+    .pad { padding: 16px; }
+    .controls {
+      display: grid;
+      grid-template-columns: 1fr 160px 96px;
+      gap: 10px;
+      align-items: end;
+    }
+    label {
+      display: block;
+      margin-bottom: 6px;
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 700;
+    }
+    input {
+      width: 100%;
+      height: 44px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 0 12px;
+      font-size: 14px;
+      color: var(--ink);
+      background: #fff;
+    }
+    button {
+      height: 44px;
+      border: 0;
+      border-radius: 8px;
+      padding: 0 14px;
+      cursor: pointer;
+      font-weight: 800;
+      letter-spacing: 0;
+    }
+    .primary { background: var(--green); color: #fff; }
+    .secondary { background: #eef1f6; color: var(--black); }
+    .danger { background: #fff1eb; color: var(--red); }
+    .status {
+      margin-top: 12px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 12px;
+      color: var(--muted);
+      line-height: 1.5;
+      min-height: 46px;
+      background: #fbfcfe;
+    }
+    .status.error { border-color: #fdba74; color: var(--red); background: #fff7ed; }
+    .status.success { border-color: #99f6e4; color: var(--green); background: #f0fdfa; }
+    .video {
+      position: relative;
+      margin-top: 18px;
+      aspect-ratio: 16 / 9;
+      overflow: hidden;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #111827;
+    }
+    .video iframe,
+    .placeholder {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      border: 0;
+    }
+    .placeholder {
+      display: grid;
+      place-items: center;
+      padding: 20px;
+      color: #d1d5db;
+      text-align: center;
+      line-height: 1.6;
+    }
+    .live-grid {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 12px;
+    }
+    .readout {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 14px;
+      min-height: 112px;
+      background: #fff;
+    }
+    .readout.partial {
+      border-style: dashed;
+      background: #fbfcfe;
+    }
+    .readout.translating {
+      border-color: #fde68a;
+      background: #fffbeb;
+    }
+    .label {
+      margin-bottom: 8px;
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 800;
+    }
+    .text {
+      font-size: 18px;
+      line-height: 1.65;
+      overflow-wrap: anywhere;
+      white-space: pre-wrap;
+    }
+    .feed {
+      display: grid;
+      gap: 10px;
+      max-height: 600px;
+      overflow: auto;
+      padding-right: 4px;
+    }
+    .segment {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 12px;
+      background: #fff;
+    }
+    .segment-head {
+      display: flex;
+      justify-content: space-between;
+      gap: 10px;
+      margin-bottom: 8px;
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 700;
+    }
+    .ko {
+      font-size: 17px;
+      line-height: 1.65;
+      margin-bottom: 10px;
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+    }
+    .en {
+      border-top: 1px solid var(--line);
+      padding-top: 10px;
+      color: var(--muted);
+      line-height: 1.6;
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+    }
+    .empty {
+      color: var(--muted);
+      line-height: 1.6;
+      border: 1px dashed var(--line);
+      border-radius: 8px;
+      padding: 14px;
+    }
+    @media (max-width: 960px) {
+      main { padding: 14px; }
+      .topbar { align-items: flex-start; flex-direction: column; }
+      .layout { grid-template-columns: 1fr; }
+      .controls { grid-template-columns: 1fr; }
+      h1 { font-size: 21px; }
+      .text { font-size: 16px; }
+    }
   </style>
 </head>
 <body>
-  <div class="shell">
-    <div class="grid">
-      <section class="stack">
-        <article class="card pad">
-          <span class="eyebrow">Nemotron Gateway</span>
-          <h1>실시간 영문 초안과<br>확정 번역을 분리합니다.</h1>
-          <p>URL 오디오를 게이트웨이가 추출하고, Linux GPU Nemotron STT 서비스가 partial/final 영문을 생성한 뒤 최종 한국어 번역을 누적합니다.</p>
-        </article>
-        <article class="card pad">
-          <div class="field">
-            <label>Video / Audio URL</label>
-            <input id="streamUrl" type="url" placeholder="https://youtube.com/watch?v=...">
+  <main>
+    <header class="topbar">
+      <div class="brand">
+        <div class="mark">STT</div>
+        <div>
+          <h1>실시간 영어 STT · 한글 번역</h1>
+          <p class="sub">YouTube Live 오디오를 AssemblyAI로 받아 적고, OpenAI로 자연스럽게 번역합니다.</p>
+        </div>
+      </div>
+      <div class="badge">AssemblyAI Streaming + OpenAI</div>
+    </header>
+
+    <div class="layout">
+      <section>
+        <div class="section pad">
+          <div class="controls">
+            <div>
+              <label for="streamUrl">YouTube Live URL 또는 오디오 URL</label>
+              <input id="streamUrl" type="url" placeholder="https://www.youtube.com/watch?v=...">
+            </div>
+            <button class="primary" id="startBtn">시작</button>
+            <button class="danger" id="stopBtn">중지</button>
           </div>
-          <div class="field">
-            <label>Gateway WebSocket</label>
-            <input id="wsUrl" type="text">
+          <div class="status" id="status">URL을 입력하고 시작을 누르세요.</div>
+        </div>
+
+        <div class="video" id="videoShell">
+          <div class="placeholder">YouTube URL을 입력하면 영상 미리보기가 표시됩니다.</div>
+        </div>
+
+        <div class="section pad" style="margin-top:18px">
+          <div class="label">확정 기록</div>
+          <div class="feed" id="feed">
+            <div class="empty">아직 확정된 문장이 없습니다.</div>
           </div>
-          <div class="actions">
-            <button class="primary" id="startBtn">Start Session</button>
-            <button class="secondary" id="stopBtn">Stop</button>
-          </div>
-          <div class="status" id="status">서버에 연결한 뒤 URL 세션을 시작하세요.</div>
-        </article>
-        <article class="card pad">
-          <div class="video" id="videoShell"><div class="placeholder">유튜브 URL이면 여기에 영상이 같이 표시됩니다.</div></div>
-        </article>
+        </div>
       </section>
-      <section class="stack">
-        <article class="card pad">
-          <div class="box">
-            <div class="mini">Latest Final English</div>
-            <div class="text" id="liveEnglish">아직 확정 영문이 없습니다.</div>
+
+      <aside class="live-grid">
+        <div class="section pad">
+          <div class="readout partial">
+            <div class="label">영어 초안</div>
+            <div class="text" id="partialEnglish">말하는 동안 이곳에 임시 STT가 표시됩니다.</div>
           </div>
-          <div class="box draft" style="margin-top:12px">
-            <div class="mini">Partial English Draft</div>
-            <div class="text" id="partialEnglish">말하는 동안 초안이 여기에 표시됩니다.</div>
+          <div class="readout" style="margin-top:12px">
+            <div class="label">확정 영어</div>
+            <div class="text" id="liveEnglish">문장이 끝나면 확정 영어가 표시됩니다.</div>
           </div>
-          <div class="box" style="margin-top:12px">
-            <div class="mini">Latest Final Korean</div>
-            <div class="text" id="liveKorean">아직 확정 번역이 없습니다.</div>
+          <div class="readout" id="koreanBox" style="margin-top:12px">
+            <div class="label">확정 한글</div>
+            <div class="text" id="liveKorean">번역 결과가 이곳에 표시됩니다.</div>
           </div>
-        </article>
-        <article class="card pad">
-          <div class="mini">Segment Feed</div>
-          <div class="feed" id="feed"></div>
-        </article>
-      </section>
+        </div>
+      </aside>
     </div>
-  </div>
+  </main>
+
   <script>
-    const wsInput = document.getElementById("wsUrl");
     const streamUrlInput = document.getElementById("streamUrl");
     const statusEl = document.getElementById("status");
     const liveEnglish = document.getElementById("liveEnglish");
     const partialEnglish = document.getElementById("partialEnglish");
     const liveKorean = document.getElementById("liveKorean");
+    const koreanBox = document.getElementById("koreanBox");
     const feed = document.getElementById("feed");
     const videoShell = document.getElementById("videoShell");
-    wsInput.value = `ws://${location.host}/ws/ui`;
-    let ws = null;
     const segments = new Map();
+    let ws = null;
+
+    function wsUrl() {
+      const scheme = location.protocol === "https:" ? "wss" : "ws";
+      return `${scheme}://${location.host}/ws/ui`;
+    }
 
     function esc(text) {
-      return String(text).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+      return String(text || "")
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;");
     }
-    function setStatus(text) { statusEl.textContent = text; }
+
+    function setStatus(text, level = "info") {
+      statusEl.textContent = text;
+      statusEl.className = `status ${level === "error" ? "error" : level === "success" ? "success" : ""}`;
+    }
+
     function parseYoutubeId(url) {
       try {
         const parsed = new URL(url);
         if (parsed.hostname.includes("youtu.be")) return parsed.pathname.slice(1);
         if (parsed.hostname.includes("youtube.com")) return parsed.searchParams.get("v") || "";
-      } catch { return ""; }
+      } catch {
+        return "";
+      }
       return "";
     }
+
     function setPreview(url) {
       const id = parseYoutubeId(url);
       if (!id) {
-        videoShell.innerHTML = '<div class="placeholder">유튜브가 아니면 영상은 표시하지 않고 오디오만 처리합니다.</div>';
+        videoShell.innerHTML = '<div class="placeholder">YouTube가 아닌 URL은 영상 없이 오디오만 처리합니다.</div>';
         return;
       }
-      videoShell.innerHTML = `<iframe src="https://www.youtube.com/embed/${id}?autoplay=1&rel=0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe>`;
+      videoShell.innerHTML = `<iframe src="https://www.youtube.com/embed/${encodeURIComponent(id)}?autoplay=1&rel=0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe>`;
     }
-    function renderFeed() {
-      const items = [...segments.values()].sort((a, b) => a.seq - b.seq);
-      feed.innerHTML = items.map(item => `<article class="segment"><div class="head"><span>${item.id}</span></div><div class="ko">${item.ko || "번역 대기 중..."}</div><div class="en">${item.en || "영문 대기 중..."}</div></article>`).join("");
-    }
+
     function resetUi() {
       segments.clear();
-      liveEnglish.textContent = "아직 확정 영문이 없습니다.";
-      partialEnglish.textContent = "말하는 동안 초안이 여기에 표시됩니다.";
-      liveKorean.textContent = "아직 확정 번역이 없습니다.";
-      feed.innerHTML = "";
+      partialEnglish.textContent = "말하는 동안 이곳에 임시 STT가 표시됩니다.";
+      liveEnglish.textContent = "문장이 끝나면 확정 영어가 표시됩니다.";
+      liveKorean.textContent = "번역 결과가 이곳에 표시됩니다.";
+      koreanBox.classList.remove("translating");
+      feed.innerHTML = '<div class="empty">아직 확정된 문장이 없습니다.</div>';
     }
+
+    function renderFeed() {
+      const items = [...segments.values()].sort((a, b) => b.seq - a.seq);
+      if (!items.length) {
+        feed.innerHTML = '<div class="empty">아직 확정된 문장이 없습니다.</div>';
+        return;
+      }
+      feed.innerHTML = items.map(item => `
+        <article class="segment">
+          <div class="segment-head">
+            <span>${esc(item.id)}</span>
+            <span>${item.transMs ? `${item.transMs}ms` : "번역 중"}</span>
+          </div>
+          <div class="ko">${esc(item.ko || "번역 중입니다...")}</div>
+          <div class="en">${esc(item.en || "영어 문장 대기 중입니다...")}</div>
+        </article>
+      `).join("");
+    }
+
     function connect() {
-      if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) return;
-      ws = new WebSocket(wsInput.value.trim());
-      ws.onopen = () => setStatus("연결되었습니다. URL 세션을 시작할 수 있습니다.");
-      ws.onmessage = (event) => {
+      if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) return ws;
+      ws = new WebSocket(wsUrl());
+      ws.onopen = () => setStatus("서버와 연결되었습니다. STT 세션을 시작합니다.");
+      ws.onmessage = event => {
         const payload = JSON.parse(event.data);
         if (payload.type === "reset") {
           resetUi();
         } else if (payload.type === "status") {
-          setStatus(payload.message);
+          setStatus(payload.message, payload.level);
         } else if (payload.type === "error") {
-          setStatus(payload.message);
+          setStatus(payload.message, "error");
         } else if (payload.type === "partial") {
-          partialEnglish.textContent = payload.text || "말하는 동안 초안이 여기에 표시됩니다.";
+          partialEnglish.textContent = payload.text || "말하는 동안 이곳에 임시 STT가 표시됩니다.";
+        } else if (payload.type === "translation_start") {
+          koreanBox.classList.add("translating");
+          liveKorean.textContent = "";
+          const item = segments.get(payload.segment_id) || { id: payload.segment_id, seq: payload.seq, en: "", ko: "", transMs: 0 };
+          segments.set(payload.segment_id, item);
+          renderFeed();
+        } else if (payload.type === "translation_delta") {
+          const item = segments.get(payload.segment_id) || { id: payload.segment_id, seq: payload.seq, en: "", ko: "", transMs: 0 };
+          item.ko = `${item.ko || ""}${payload.text || ""}`;
+          liveKorean.textContent = item.ko;
+          segments.set(payload.segment_id, item);
+          renderFeed();
         } else if (payload.type === "segment") {
-          const item = segments.get(payload.segment_id) || { id: payload.segment_id, seq: payload.seq, en: "", ko: "" };
+          const item = segments.get(payload.segment_id) || { id: payload.segment_id, seq: payload.seq, en: "", ko: "", transMs: 0 };
           if (payload.phase === "final_en") {
-            item.en = esc(payload.text);
-            liveEnglish.textContent = payload.text;
-          } else if (payload.phase === "final_ko") {
-            item.ko = esc(payload.text);
-            liveKorean.textContent = payload.text;
+            item.en = payload.text || "";
+            liveEnglish.textContent = item.en;
+            partialEnglish.textContent = "다음 문장을 듣고 있습니다.";
+          }
+          if (payload.phase === "final_ko") {
+            item.ko = payload.text || "";
+            item.transMs = payload.trans_ms || 0;
+            liveKorean.textContent = item.ko;
+            koreanBox.classList.remove("translating");
+            setStatus("번역 결과를 갱신했습니다.", "success");
           }
           segments.set(payload.segment_id, item);
           renderFeed();
         }
       };
-      ws.onclose = () => setStatus("연결이 종료되었습니다.");
-      ws.onerror = () => setStatus("WebSocket 오류가 발생했습니다.");
+      ws.onclose = () => setStatus("서버 연결이 종료되었습니다.");
+      ws.onerror = () => setStatus("WebSocket 연결 오류가 발생했습니다.", "error");
+      return ws;
     }
+
     document.getElementById("startBtn").addEventListener("click", () => {
       const url = streamUrlInput.value.trim();
-      if (!url) { setStatus("먼저 URL을 입력하세요."); return; }
+      if (!url) {
+        setStatus("먼저 YouTube Live URL 또는 오디오 URL을 입력하세요.", "error");
+        return;
+      }
       setPreview(url);
-      connect();
-      const send = () => ws.send(JSON.stringify({ type: "start", url }));
-      if (ws.readyState === WebSocket.OPEN) send(); else ws.addEventListener("open", send, { once: true });
+      const socket = connect();
+      const start = () => socket.send(JSON.stringify({ type: "start", url }));
+      if (socket.readyState === WebSocket.OPEN) start();
+      else socket.addEventListener("open", start, { once: true });
     });
+
     document.getElementById("stopBtn").addEventListener("click", () => {
-      if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: "stop" }));
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({ type: "stop" }));
+      }
     });
   </script>
 </body>

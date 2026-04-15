@@ -4,5 +4,9 @@ __pycache__
 *.pyc
 *.pyo
 *.pyd
-artifacts/models/.cache
+artifacts/models
+artifacts/wheels
 artifacts/images
+.env
+.env.*
+!.env.example

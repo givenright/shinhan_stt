@@ -10,22 +10,25 @@ def _float(name: str, default: float) -> float:
 
 class Settings:
     host = os.getenv("GATEWAY_HOST", "0.0.0.0")
-    port = int(os.getenv("GATEWAY_PORT", "8080"))
-    stt_ws_url = os.getenv("STT_WS_URL", "ws://nemotron-asr:8090/ws/transcribe")
-    translation_backend = os.getenv("TRANSLATION_BACKEND", "vllm").lower()
-    vllm_base_url = os.getenv("VLLM_BASE_URL", "http://vllm.internal:8000")
-    vllm_chat_path = os.getenv("VLLM_CHAT_PATH", "/v1/chat/completions")
-    vllm_model_name = os.getenv("VLLM_MODEL_NAME", "gpt-4o")
-    vllm_timeout = _float("VLLM_TIMEOUT", 10.0)
-    google_translate_url = os.getenv(
-        "GOOGLE_TRANSLATE_URL",
-        "https://translate.googleapis.com/translate_a/single",
-    )
+    port = int(os.getenv("PORT", os.getenv("GATEWAY_PORT", "8080")))
+
+    assemblyai_api_key = os.getenv("ASSEMBLYAI_API_KEY", "")
+    assemblyai_streaming_url = os.getenv("ASSEMBLYAI_STREAMING_URL", "wss://streaming.assemblyai.com/v3/ws")
+    assemblyai_sample_rate = int(os.getenv("ASSEMBLYAI_SAMPLE_RATE", "16000"))
+    assemblyai_speech_model = os.getenv("ASSEMBLYAI_STREAMING_MODEL", "u3-rt-pro")
+    assemblyai_min_turn_silence = int(os.getenv("ASSEMBLYAI_MIN_TURN_SILENCE_MS", "700"))
+    assemblyai_max_turn_silence = int(os.getenv("ASSEMBLYAI_MAX_TURN_SILENCE_MS", "1600"))
+    assemblyai_format_turns = os.getenv("ASSEMBLYAI_FORMAT_TURNS", "true").lower() == "true"
+
+    openai_api_key = os.getenv("OPENAI_API_KEY", "")
+    openai_model = os.getenv("OPENAI_MODEL", "gpt-5.3")
+    openai_timeout = _float("OPENAI_TIMEOUT", 20.0)
+    translation_context_size = int(os.getenv("TRANSLATION_CONTEXT_SIZE", "4"))
+
     ingress_chunk_seconds = _float("INGRESS_CHUNK_SECONDS", 0.16)
-    vad_silence_threshold = _float("VAD_SILENCE_THRESHOLD", 0.015)
-    vad_silence_duration = _float("VAD_SILENCE_DURATION", 0.6)
-    vad_min_speech_seconds = _float("VAD_MIN_SPEECH_SECONDS", 0.6)
-    vad_max_buffer_seconds = _float("VAD_MAX_BUFFER_SECONDS", 12.0)
+    ytdlp_proxy_url = os.getenv("YTDLP_PROXY_URL", "")
+    ytdlp_cookies = os.getenv("YTDLP_COOKIES", "")
+    ytdlp_cookies_file = os.getenv("YTDLP_COOKIES_FILE", "")
 
 
 settings = Settings()

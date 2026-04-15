@@ -1,42 +1,94 @@
 from __future__ import annotations
 
 import asyncio
+import base64
 import os
 import subprocess
+import tempfile
 from collections.abc import AsyncGenerator
+from pathlib import Path
 
-import numpy as np
 import yt_dlp
 
-
-SAMPLE_RATE = 16000
+from .settings import settings
 
 
 def _clean_env() -> dict[str, str]:
     env = os.environ.copy()
-    for key in ["HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "http_proxy", "https_proxy", "all_proxy"]:
-        env[key] = ""
+    if not settings.ytdlp_proxy_url:
+        for key in ["HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "http_proxy", "https_proxy", "all_proxy"]:
+            env[key] = ""
     return env
 
 
 class URLAudioSource:
     def __init__(self, url: str, chunk_seconds: float) -> None:
         self.url = url
-        self.chunk_bytes = int(SAMPLE_RATE * chunk_seconds * 2)
+        self.chunk_bytes = int(settings.assemblyai_sample_rate * chunk_seconds * 2)
         self.env = _clean_env()
         self.proc: subprocess.Popen[bytes] | None = None
+        self._temp_cookie_path: Path | None = None
+
+    def _cookie_file(self) -> str | None:
+        if settings.ytdlp_cookies_file:
+            return settings.ytdlp_cookies_file
+        if not settings.ytdlp_cookies:
+            return None
+
+        cookie_bytes = settings.ytdlp_cookies.encode("utf-8")
+        try:
+            cookie_bytes = base64.b64decode(settings.ytdlp_cookies, validate=True)
+        except Exception:
+            pass
+
+        cookie_path = Path(tempfile.gettempdir()) / "ytdlp_cookies.txt"
+        cookie_path.write_bytes(cookie_bytes)
+        self._temp_cookie_path = cookie_path
+        return str(cookie_path)
 
     def _resolve_url(self) -> str:
         lowered = self.url.lower()
-        if lowered.endswith((".m3u8", ".mp4", ".ts", ".webm", ".mp3", ".wav")):
+        if lowered.endswith((".m3u8", ".mp4", ".ts", ".webm", ".mp3", ".wav", ".m4a")):
             return self.url
-        with yt_dlp.YoutubeDL(
-            {"quiet": True, "no_warnings": True, "noplaylist": True, "proxy": "", "format": "bestaudio/best"}
-        ) as ydl:
-            info = ydl.extract_info(self.url, download=False)
-            return str(info.get("url") or info["requested_formats"][0]["url"])
 
-    async def stream(self) -> AsyncGenerator[np.ndarray, None]:
+        ydl_opts: dict[str, object] = {
+            "quiet": True,
+            "no_warnings": True,
+            "noplaylist": True,
+            "format": "bestaudio/best",
+            "retries": 5,
+            "fragment_retries": 5,
+            "socket_timeout": 20,
+            "http_headers": {
+                "User-Agent": (
+                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+                    "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+                ),
+                "Accept-Language": "en-US,en;q=0.9,ko;q=0.8",
+            },
+            "extractor_args": {"youtube": {"player_client": ["android", "web"]}},
+        }
+        if settings.ytdlp_proxy_url:
+            ydl_opts["proxy"] = settings.ytdlp_proxy_url
+        else:
+            ydl_opts["proxy"] = ""
+        cookie_file = self._cookie_file()
+        if cookie_file:
+            ydl_opts["cookiefile"] = cookie_file
+
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            info = ydl.extract_info(self.url, download=False)
+            if info.get("url"):
+                return str(info["url"])
+            requested_formats = info.get("requested_formats") or []
+            if requested_formats:
+                return str(requested_formats[0]["url"])
+            formats = info.get("formats") or []
+            if formats:
+                return str(formats[-1]["url"])
+        raise RuntimeError("Could not resolve a playable media URL.")
+
+    async def stream_pcm(self) -> AsyncGenerator[bytes, None]:
         media_url = await asyncio.to_thread(self._resolve_url)
         self.proc = subprocess.Popen(
             [
@@ -56,7 +108,7 @@ class URLAudioSource:
                 "-f",
                 "s16le",
                 "-ar",
-                str(SAMPLE_RATE),
+                str(settings.assemblyai_sample_rate),
                 "-ac",
                 "1",
                 "pipe:1",
@@ -73,9 +125,7 @@ class URLAudioSource:
                 data = await asyncio.to_thread(self.proc.stdout.read, self.chunk_bytes)
                 if not data:
                     break
-                if len(data) < self.chunk_bytes:
-                    data += b"\x00" * (self.chunk_bytes - len(data))
-                yield np.frombuffer(data, dtype=np.int16).astype(np.float32) / 32768.0
+                yield data
         finally:
             await self.stop()
 
@@ -86,41 +136,5 @@ class URLAudioSource:
                 await asyncio.to_thread(self.proc.wait, 3)
             except Exception:
                 self.proc.kill()
-
-
-class VADBuffer:
-    def __init__(self, silence_threshold: float, silence_duration: float, min_speech_seconds: float, max_buffer_seconds: float) -> None:
-        self.threshold = silence_threshold
-        self.silence_frames = int(silence_duration * SAMPLE_RATE)
-        self.min_frames = int(min_speech_seconds * SAMPLE_RATE)
-        self.max_frames = int(max_buffer_seconds * SAMPLE_RATE)
-        self.buffer: list[np.ndarray] = []
-        self.buffer_len = 0
-        self.silence_len = 0
-
-    def add(self, chunk: np.ndarray) -> np.ndarray | None:
-        self.buffer.append(chunk)
-        self.buffer_len += len(chunk)
-        rms = float(np.sqrt(np.mean(chunk.astype(np.float64) ** 2)))
-        self.silence_len = self.silence_len + len(chunk) if rms < self.threshold else 0
-        if self.buffer_len >= self.max_frames:
-            return self._flush()
-        if self.silence_len >= self.silence_frames and self.buffer_len >= self.min_frames:
-            return self._flush()
-        return None
-
-    def flush(self) -> np.ndarray | None:
-        if self.buffer_len >= self.min_frames:
-            return self._flush()
-        self.reset()
-        return None
-
-    def reset(self) -> None:
-        self.buffer = []
-        self.buffer_len = 0
-        self.silence_len = 0
-
-    def _flush(self) -> np.ndarray:
-        data = np.concatenate(self.buffer)
-        self.reset()
-        return data
+        if self._temp_cookie_path:
+            self._temp_cookie_path.unlink(missing_ok=True)

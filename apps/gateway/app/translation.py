@@ -1,17 +1,20 @@
 from __future__ import annotations
 
-import httpx
+import time
+from collections.abc import AsyncGenerator
+
+from openai import AsyncOpenAI
 
 from .settings import settings
 
 
 GLOSSARY = {
-    "guidance": "가이던스 또는 실적 전망",
+    "guidance": "가이던스",
     "gross margin": "매출총이익률",
     "operating margin": "영업이익률",
-    "diluted eps": "희석 EPS",
+    "diluted EPS": "희석 EPS",
     "buyback": "자사주 매입",
-    "capex": "자본적 지출",
+    "capex": "설비투자",
     "free cash flow": "잉여현금흐름",
     "year over year": "전년 동기 대비",
     "quarter over quarter": "전분기 대비",
@@ -22,46 +25,53 @@ def _glossary_text() -> str:
     return "\n".join(f"- {source}: {target}" for source, target in GLOSSARY.items())
 
 
-SYSTEM_PROMPT = f"""You are a real-time financial interpreter.
-Translate English earnings-call speech into Korean.
+SYSTEM_PROMPT = f"""You are a real-time English-to-Korean interpreter.
+Translate spoken English into natural Korean subtitles.
 Return Korean only.
-Use the glossary when relevant:
+Preserve numbers, company names, and ticker symbols accurately.
+If the source is incomplete, produce a natural Korean subtitle without adding facts.
+Use this glossary when relevant:
 {_glossary_text()}
 """
 
 
 class Translator:
     def __init__(self) -> None:
-        self.client = httpx.AsyncClient(
-            timeout=httpx.Timeout(settings.vllm_timeout),
-            trust_env=False,
-        )
+        if not settings.openai_api_key:
+            raise RuntimeError("OPENAI_API_KEY is not configured.")
+        self.client = AsyncOpenAI(api_key=settings.openai_api_key, timeout=settings.openai_timeout)
 
-    async def translate(self, text: str, context: list[str]) -> str:
-        if settings.translation_backend == "google":
-            response = await self.client.get(
-                settings.google_translate_url,
-                params={"client": "gtx", "sl": "en", "tl": "ko", "dt": "t", "q": text},
-            )
-            response.raise_for_status()
-            data = response.json()
-            return "".join(part[0] for part in data[0] if part and part[0]).strip()
-
-        user_text = text if not context else f"Context: {' '.join(context)}\nCurrent sentence: {text}"
-        response = await self.client.post(
-            f"{settings.vllm_base_url.rstrip('/')}{settings.vllm_chat_path}",
-            json={
-                "model": settings.vllm_model_name,
-                "messages": [
-                    {"role": "system", "content": SYSTEM_PROMPT},
-                    {"role": "user", "content": user_text},
-                ],
-                "max_tokens": 256,
-                "temperature": 0.1,
-            },
+    async def translate(self, text: str, context: list[str]) -> tuple[str, int]:
+        started = time.time()
+        response = await self.client.responses.create(
+            model=settings.openai_model,
+            instructions=SYSTEM_PROMPT,
+            input=self._user_input(text, context),
         )
-        response.raise_for_status()
-        return response.json()["choices"][0]["message"]["content"].strip()
+        return response.output_text.strip(), round((time.time() - started) * 1000)
+
+    async def stream_translate(self, text: str, context: list[str]) -> AsyncGenerator[tuple[str, int | None], None]:
+        started = time.time()
+        collected: list[str] = []
+        stream = await self.client.responses.create(
+            model=settings.openai_model,
+            instructions=SYSTEM_PROMPT,
+            input=self._user_input(text, context),
+            stream=True,
+        )
+        async for event in stream:
+            if event.type == "response.output_text.delta":
+                collected.append(event.delta)
+                yield event.delta, None
+            elif event.type == "response.output_text.done":
+                collected = [event.text]
+        yield "".join(collected).strip(), round((time.time() - started) * 1000)
+
+    def _user_input(self, text: str, context: list[str]) -> str:
+        if not context:
+            return f"Current sentence:\n{text}"
+        context_text = "\n".join(f"- {item}" for item in context[-settings.translation_context_size :])
+        return f"Previous English context:\n{context_text}\n\nCurrent sentence:\n{text}"
 
     async def aclose(self) -> None:
-        await self.client.aclose()
+        await self.client.close()
