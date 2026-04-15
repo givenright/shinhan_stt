@@ -5,6 +5,7 @@ import base64
 import os
 import subprocess
 import tempfile
+import time
 from collections.abc import AsyncGenerator
 from pathlib import Path
 from typing import Any
@@ -147,6 +148,8 @@ class URLAudioSource:
             bufsize=0,
         )
         pending = bytearray()
+        stream_started = time.monotonic()
+        emitted_seconds = 0.0
         try:
             while True:
                 assert self.proc.stdout is not None
@@ -157,11 +160,25 @@ class URLAudioSource:
                 while len(pending) >= self.chunk_bytes:
                     chunk = bytes(pending[: self.chunk_bytes])
                     del pending[: self.chunk_bytes]
+                    await self._pace_audio(stream_started, emitted_seconds)
                     yield chunk
+                    emitted_seconds += self._audio_seconds(chunk)
             if len(pending) >= self.min_chunk_bytes:
-                yield bytes(pending)
+                chunk = bytes(pending)
+                await self._pace_audio(stream_started, emitted_seconds)
+                yield chunk
         finally:
             await self.stop()
+
+    async def _pace_audio(self, stream_started: float, emitted_seconds: float) -> None:
+        target_time = stream_started + emitted_seconds
+        delay = target_time - time.monotonic()
+        if delay > 0:
+            await asyncio.sleep(delay)
+
+    def _audio_seconds(self, chunk: bytes) -> float:
+        bytes_per_sample = 2
+        return len(chunk) / (settings.assemblyai_sample_rate * bytes_per_sample)
 
     async def stop(self) -> None:
         if self.proc and self.proc.poll() is None:
