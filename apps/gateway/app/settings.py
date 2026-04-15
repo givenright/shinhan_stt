@@ -30,6 +30,7 @@ class Settings:
     ytdlp_cookies = os.getenv("YTDLP_COOKIES", "")
     ytdlp_cookies_b64 = os.getenv("YTDLP_COOKIES_B64", "")
     ytdlp_cookies_file = os.getenv("YTDLP_COOKIES_FILE", "")
+    ytdlp_impersonate = os.getenv("YTDLP_IMPERSONATE", "chrome")
 
 
 settings = Settings()

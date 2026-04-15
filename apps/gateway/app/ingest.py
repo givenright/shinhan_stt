@@ -92,6 +92,8 @@ class URLAudioSource:
             ydl_opts["proxy"] = settings.ytdlp_proxy_url
         else:
             ydl_opts["proxy"] = ""
+        if settings.ytdlp_impersonate:
+            ydl_opts["impersonate"] = settings.ytdlp_impersonate
         cookie_file = self._cookie_file()
         if cookie_file:
             ydl_opts["cookiefile"] = cookie_file

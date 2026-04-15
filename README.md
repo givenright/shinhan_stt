@@ -30,6 +30,7 @@ ASSEMBLYAI_MAX_TURN_SILENCE_MS=1600
 INGRESS_CHUNK_SECONDS=0.16
 TRANSLATION_CONTEXT_SIZE=4
 OPENAI_TIMEOUT=20
+YTDLP_IMPERSONATE=chrome
 ```
 
 6. Railway의 `Settings` 또는 `Networking`에서 public domain을 생성합니다.
@@ -45,6 +46,14 @@ Sign in to confirm you're not a bot. Use --cookies-from-browser or --cookies for
 ```
 
 Railway 컨테이너에는 브라우저가 없으므로 `--cookies-from-browser`는 사용할 수 없습니다. 대신 내 브라우저에서 YouTube 쿠키를 `cookies.txt`로 내보내고, 그 내용을 Railway 환경변수에 넣어야 합니다.
+
+이 프로젝트는 `yt-dlp`의 브라우저 impersonation도 켜둡니다. Railway Variables에 아래 값이 있으면 Chrome처럼 요청을 보냅니다.
+
+```env
+YTDLP_IMPERSONATE=chrome
+```
+
+이 설정은 성공률을 올려주지만, YouTube가 로그인을 요구하는 경우에는 쿠키가 여전히 필요합니다.
 
 ### 권장 방식: YTDLP_COOKIES_B64
 

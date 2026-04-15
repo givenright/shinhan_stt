@@ -45,6 +45,9 @@ async def health() -> dict[str, str]:
         "stt": "assemblyai",
         "translation": "openai",
         "model": settings.openai_model,
+        "youtube_cookies": "configured" if _youtube_cookies_configured() else "missing",
+        "youtube_proxy": "configured" if settings.ytdlp_proxy_url else "missing",
+        "youtube_impersonate": settings.ytdlp_impersonate or "disabled",
     }
 
 
@@ -146,7 +149,18 @@ async def run_session(ws: WebSocket, url: str) -> None:
             )
 
     await send({"type": "reset"})
-    await send({"type": "status", "level": "info", "message": "YouTube 오디오를 준비하고 있습니다."})
+    await send(
+        {
+            "type": "status",
+            "level": "info",
+            "message": (
+                "YouTube 오디오를 준비하고 있습니다. "
+                f"cookies={_yes_no(_youtube_cookies_configured())}, "
+                f"proxy={_yes_no(bool(settings.ytdlp_proxy_url))}, "
+                f"impersonate={settings.ytdlp_impersonate or 'off'}"
+            ),
+        }
+    )
 
     try:
         async for event in stt.stream(source.stream_pcm()):
@@ -175,13 +189,23 @@ async def run_session(ws: WebSocket, url: str) -> None:
     except asyncio.CancelledError:
         raise
     except Exception as exc:
+        detail = str(exc)
+        if "Sign in to confirm" in detail or "not a bot" in detail:
+            message = (
+                "YouTube가 Railway 서버를 봇으로 판정했습니다. "
+                "Railway Variables에 YTDLP_COOKIES_B64를 넣고 재배포해야 합니다. "
+                "이미 넣었다면 값이 비었거나 만료된 쿠키일 수 있습니다. "
+                f"상세: {detail}"
+            )
+        else:
+            message = (
+                "처리 중 오류가 발생했습니다. YouTube 차단이면 Railway 환경변수에 "
+                f"쿠키/프록시를 설정해야 할 수 있습니다. 상세: {detail}"
+            )
         await send(
             {
                 "type": "error",
-                "message": (
-                    "처리 중 오류가 발생했습니다. YouTube 차단이면 Railway 환경변수에 "
-                    f"쿠키/프록시를 설정해야 할 수 있습니다. 상세: {exc}"
-                ),
+                "message": message,
             }
         )
     finally:
@@ -190,3 +214,11 @@ async def run_session(ws: WebSocket, url: str) -> None:
                 task.cancel()
         await asyncio.gather(*pending_finalize.values(), return_exceptions=True)
         await source.stop()
+
+
+def _youtube_cookies_configured() -> bool:
+    return bool(settings.ytdlp_cookies_b64 or settings.ytdlp_cookies or settings.ytdlp_cookies_file)
+
+
+def _yes_no(value: bool) -> str:
+    return "on" if value else "off"
