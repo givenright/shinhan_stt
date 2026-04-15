@@ -28,6 +28,7 @@ class Settings:
     ingress_chunk_seconds = _float("INGRESS_CHUNK_SECONDS", 0.16)
     ytdlp_proxy_url = os.getenv("YTDLP_PROXY_URL", "")
     ytdlp_cookies = os.getenv("YTDLP_COOKIES", "")
+    ytdlp_cookies_b64 = os.getenv("YTDLP_COOKIES_B64", "")
     ytdlp_cookies_file = os.getenv("YTDLP_COOKIES_FILE", "")
 
 
