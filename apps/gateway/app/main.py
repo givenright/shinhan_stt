@@ -72,7 +72,7 @@ async def ui_ws(ws: WebSocket) -> None:
                 if session_task and not session_task.done():
                     session_task.cancel()
                     await asyncio.gather(session_task, return_exceptions=True)
-                session_task = asyncio.create_task(run_session(ws, payload["url"]))
+                session_task = asyncio.create_task(run_url_session(ws, payload["url"]))
             elif payload.get("type") == "stop":
                 if session_task and not session_task.done():
                     session_task.cancel()
@@ -90,24 +90,23 @@ async def ui_ws(ws: WebSocket) -> None:
 async def browser_audio_ws(ws: WebSocket) -> None:
     await ws.accept()
     queue: asyncio.Queue[bytes | None] = asyncio.Queue(maxsize=200)
-    events_task = asyncio.create_task(run_browser_audio_session(ws, queue))
+    session_task = asyncio.create_task(run_browser_audio_session(ws, queue))
     try:
         while True:
             message = await ws.receive()
             if message.get("bytes") is not None:
                 await queue.put(message["bytes"])
-            elif message.get("text") is not None:
-                if message["text"] == "stop":
-                    await queue.put(None)
-                    break
+            elif message.get("text") == "stop":
+                await queue.put(None)
+                break
     except WebSocketDisconnect:
         pass
     finally:
         await queue.put(None)
-        await asyncio.gather(events_task, return_exceptions=True)
+        await asyncio.gather(session_task, return_exceptions=True)
 
 
-async def run_session(ws: WebSocket, url: str) -> None:
+async def run_url_session(ws: WebSocket, url: str) -> None:
     source = URLAudioSource(url, settings.ingress_chunk_seconds)
     stt = AssemblyAIStreamingClient()
 
@@ -144,7 +143,7 @@ async def run_browser_audio_session(ws: WebSocket, queue: asyncio.Queue[bytes | 
     await run_stt_translation_session(
         ws,
         stt.stream(audio()),
-        starting_message="브라우저 탭 오디오를 AssemblyAI STT에 연결하고 있습니다.",
+        starting_message="브라우저 오디오를 AssemblyAI STT에 연결하고 있습니다.",
     )
 
 
@@ -178,16 +177,7 @@ async def run_stt_translation_session(ws: WebSocket, events, starting_message: s
             segment_seq += 1
         seq = int(segment_id.split("_")[-1])
         started = time.time()
-        await send(
-            {
-                "type": "segment",
-                "segment_id": segment_id,
-                "seq": seq,
-                "phase": "final_en",
-                "text": text,
-                "formatted": event.turn_is_formatted,
-            }
-        )
+        await send({"type": "segment", "segment_id": segment_id, "seq": seq, "phase": "final_en", "text": text})
 
         await send({"type": "translation_start", "segment_id": segment_id, "seq": seq})
         try:
@@ -203,33 +193,33 @@ async def run_stt_translation_session(ws: WebSocket, events, starting_message: s
             )
             return
 
-        context.append(text)
-        await send(
-            {
-                "type": "segment",
-                "segment_id": segment_id,
-                "seq": seq,
-                "phase": "final_ko",
-                "text": korean,
-                "trans_ms": trans_ms,
-                "total_ms": round((time.time() - started) * 1000),
-            }
-        )
+        if korean:
+            context.append(text)
+            await send(
+                {
+                    "type": "segment",
+                    "segment_id": segment_id,
+                    "seq": seq,
+                    "phase": "final_ko",
+                    "text": korean,
+                    "trans_ms": trans_ms,
+                    "total_ms": round((time.time() - started) * 1000),
+                }
+            )
 
     async def translate_partial(text: str, turn_order: int) -> None:
         await asyncio.sleep(settings.partial_translation_delay)
-        if turn_order in finalized_turns:
+        if turn_order in finalized_turns or not _should_partial_translate(text):
             return
         korean, trans_ms = await translator.translate(text, list(context))
-        if turn_order in finalized_turns:
-            return
-        await send({"type": "partial_ko", "text": korean, "turn_order": turn_order, "trans_ms": trans_ms})
+        if korean and turn_order not in finalized_turns:
+            await send({"type": "partial_ko", "text": korean, "turn_order": turn_order, "trans_ms": trans_ms})
 
     def schedule_partial_translation(text: str, turn_order: int) -> None:
         nonlocal pending_partial_translation
         if pending_partial_translation and not pending_partial_translation.done():
             pending_partial_translation.cancel()
-        if len(text.strip()) < 12:
+        if not _should_partial_translate(text):
             return
         pending_partial_translation = asyncio.create_task(translate_partial(text, turn_order))
 
@@ -240,13 +230,7 @@ async def run_stt_translation_session(ws: WebSocket, events, starting_message: s
         pending_finalize[event.turn_order] = asyncio.create_task(finalize_turn(event, delay))
 
     await send({"type": "reset"})
-    await send(
-        {
-            "type": "status",
-            "level": "info",
-            "message": starting_message,
-        }
-    )
+    await send({"type": "status", "level": "info", "message": starting_message})
 
     try:
         async for event in events:
@@ -274,20 +258,7 @@ async def run_stt_translation_session(ws: WebSocket, events, starting_message: s
     except asyncio.CancelledError:
         raise
     except Exception as exc:
-        detail = _format_exception(exc)
-        if "Sign in to confirm" in detail or "not a bot" in detail:
-            message = (
-                "YouTube가 Railway 서버를 봇으로 판정했습니다. "
-                "Railway Variables에 YTDLP_COOKIES_B64를 넣고 재배포해야 합니다. "
-                "이미 넣었다면 값이 비었거나 만료된 쿠키일 수 있습니다. "
-                f"상세: {detail}"
-            )
-        else:
-            message = (
-                "처리 중 오류가 발생했습니다. YouTube 차단이면 Railway 환경변수에 "
-                f"쿠키/프록시를 설정해야 할 수 있습니다. 상세: {detail}"
-            )
-        await send({"type": "error", "message": message})
+        await send({"type": "error", "message": _user_facing_error(exc)})
     finally:
         for task in pending_finalize.values():
             if not task.done():
@@ -313,8 +284,27 @@ def _format_exception(exc: BaseException) -> str:
     return repr(exc)
 
 
+def _user_facing_error(exc: BaseException) -> str:
+    detail = _format_exception(exc)
+    if "Sign in to confirm" in detail or "not a bot" in detail:
+        return (
+            "YouTube가 Railway 서버를 봇으로 판정했습니다. "
+            "이 영상은 서버 URL 방식으로 가져올 수 없습니다. "
+            "쿠키/프록시, 직접 HLS/audio URL, 또는 브라우저 오디오 방식이 필요합니다. "
+            f"상세: {detail}"
+        )
+    return f"처리 중 오류가 발생했습니다. 상세: {detail}"
+
+
 def _looks_sentence_complete(text: str) -> bool:
     stripped = text.rstrip()
     if len(stripped) < 24:
         return False
     return stripped.endswith((".", "?", "!", ".”", "?”", "!”"))
+
+
+def _should_partial_translate(text: str) -> bool:
+    stripped = text.strip()
+    if len(stripped) < 18:
+        return False
+    return any(char.isalpha() for char in stripped)
