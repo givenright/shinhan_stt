@@ -189,7 +189,7 @@ async def run_session(ws: WebSocket, url: str) -> None:
     except asyncio.CancelledError:
         raise
     except Exception as exc:
-        detail = str(exc)
+        detail = _format_exception(exc)
         if "Sign in to confirm" in detail or "not a bot" in detail:
             message = (
                 "YouTube가 Railway 서버를 봇으로 판정했습니다. "
@@ -222,3 +222,10 @@ def _youtube_cookies_configured() -> bool:
 
 def _yes_no(value: bool) -> str:
     return "on" if value else "off"
+
+
+def _format_exception(exc: BaseException) -> str:
+    message = str(exc).strip()
+    if message:
+        return f"{type(exc).__name__}: {message}"
+    return repr(exc)

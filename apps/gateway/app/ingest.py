@@ -65,12 +65,7 @@ class URLAudioSource:
                 return str(candidates[-1]["url"])
         raise RuntimeError("Could not resolve a playable media URL.")
 
-    def _resolve_url(self) -> str:
-        lowered = self.url.lower()
-        if lowered.endswith((".m3u8", ".mp4", ".ts", ".webm", ".mp3", ".wav", ".m4a")):
-            self._resolved_headers = {}
-            return self.url
-
+    def _ydl_opts(self, use_impersonate: bool) -> dict[str, object]:
         ydl_opts: dict[str, object] = {
             "quiet": True,
             "no_warnings": True,
@@ -92,16 +87,34 @@ class URLAudioSource:
             ydl_opts["proxy"] = settings.ytdlp_proxy_url
         else:
             ydl_opts["proxy"] = ""
-        if settings.ytdlp_impersonate:
+        if use_impersonate and settings.ytdlp_impersonate:
             ydl_opts["impersonate"] = settings.ytdlp_impersonate
         cookie_file = self._cookie_file()
         if cookie_file:
             ydl_opts["cookiefile"] = cookie_file
+        return ydl_opts
 
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            info = ydl.extract_info(self.url, download=False)
-            self._resolved_headers = {str(k): str(v) for k, v in (info.get("http_headers") or {}).items() if v}
-            return self._best_media_url(info)
+    def _resolve_url(self) -> str:
+        lowered = self.url.lower()
+        if lowered.endswith((".m3u8", ".mp4", ".ts", ".webm", ".mp3", ".wav", ".m4a")):
+            self._resolved_headers = {}
+            return self.url
+
+        attempts = [bool(settings.ytdlp_impersonate), False]
+        last_error: BaseException | None = None
+        for use_impersonate in dict.fromkeys(attempts):
+            try:
+                with yt_dlp.YoutubeDL(self._ydl_opts(use_impersonate)) as ydl:
+                    info = ydl.extract_info(self.url, download=False)
+                    self._resolved_headers = {
+                        str(k): str(v) for k, v in (info.get("http_headers") or {}).items() if v
+                    }
+                    return self._best_media_url(info)
+            except Exception as exc:
+                last_error = exc
+                if not use_impersonate:
+                    break
+        raise RuntimeError(f"yt-dlp URL resolve failed: {_format_exception(last_error)}")
 
     def _ffmpeg_input_args(self, media_url: str) -> list[str]:
         args = [
@@ -152,6 +165,7 @@ class URLAudioSource:
         pending = bytearray()
         stream_started = time.monotonic()
         emitted_seconds = 0.0
+        emitted_any = False
         try:
             while True:
                 assert self.proc.stdout is not None
@@ -164,11 +178,19 @@ class URLAudioSource:
                     del pending[: self.chunk_bytes]
                     await self._pace_audio(stream_started, emitted_seconds)
                     yield chunk
+                    emitted_any = True
                     emitted_seconds += self._audio_seconds(chunk)
             if len(pending) >= self.min_chunk_bytes:
                 chunk = bytes(pending)
                 await self._pace_audio(stream_started, emitted_seconds)
                 yield chunk
+                emitted_any = True
+            if not emitted_any:
+                stderr = ""
+                if self.proc.stderr is not None:
+                    stderr = await asyncio.to_thread(self.proc.stderr.read)
+                    stderr = stderr.decode("utf-8", errors="replace").strip()
+                raise RuntimeError(f"ffmpeg produced no audio. {stderr}".strip())
         finally:
             await self.stop()
 
@@ -191,3 +213,12 @@ class URLAudioSource:
                 self.proc.kill()
         if self._temp_cookie_path:
             self._temp_cookie_path.unlink(missing_ok=True)
+
+
+def _format_exception(exc: BaseException | None) -> str:
+    if exc is None:
+        return "unknown error"
+    message = str(exc).strip()
+    if message:
+        return f"{type(exc).__name__}: {message}"
+    return repr(exc)
