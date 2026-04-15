@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import time
 from collections import deque
+from collections.abc import AsyncGenerator
 from pathlib import Path
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
@@ -76,7 +77,69 @@ async def ui_ws(ws: WebSocket) -> None:
             await asyncio.gather(session_task, return_exceptions=True)
 
 
+@app.websocket("/ws/browser-audio")
+async def browser_audio_ws(ws: WebSocket) -> None:
+    await ws.accept()
+    queue: asyncio.Queue[bytes | None] = asyncio.Queue(maxsize=200)
+    events_task = asyncio.create_task(run_browser_audio_session(ws, queue))
+    try:
+        while True:
+            message = await ws.receive()
+            if message.get("bytes") is not None:
+                await queue.put(message["bytes"])
+            elif message.get("text") is not None:
+                if message["text"] == "stop":
+                    await queue.put(None)
+                    break
+    except WebSocketDisconnect:
+        pass
+    finally:
+        await queue.put(None)
+        await asyncio.gather(events_task, return_exceptions=True)
+
+
 async def run_session(ws: WebSocket, url: str) -> None:
+    source = URLAudioSource(url, settings.ingress_chunk_seconds)
+    stt = AssemblyAIStreamingClient()
+
+    async def audio() -> AsyncGenerator[bytes, None]:
+        async for chunk in source.stream_pcm():
+            yield chunk
+
+    try:
+        await run_stt_translation_session(
+            ws,
+            stt.stream(audio()),
+            starting_message=(
+                "YouTube 오디오를 준비하고 있습니다. "
+                f"cookies={_yes_no(_youtube_cookies_configured())}, "
+                f"proxy={_yes_no(bool(settings.ytdlp_proxy_url))}, "
+                f"impersonate={settings.ytdlp_impersonate or 'off'}"
+            ),
+        )
+    finally:
+        await source.stop()
+
+
+async def run_browser_audio_session(ws: WebSocket, queue: asyncio.Queue[bytes | None]) -> None:
+    stt = AssemblyAIStreamingClient()
+
+    async def audio() -> AsyncGenerator[bytes, None]:
+        while True:
+            chunk = await queue.get()
+            if chunk is None:
+                break
+            if chunk:
+                yield chunk
+
+    await run_stt_translation_session(
+        ws,
+        stt.stream(audio()),
+        starting_message="브라우저 탭 오디오를 AssemblyAI STT에 연결하고 있습니다.",
+    )
+
+
+async def run_stt_translation_session(ws: WebSocket, events, starting_message: str) -> None:
     assert translator is not None
     send_lock = asyncio.Lock()
     context: deque[str] = deque(maxlen=settings.translation_context_size)
@@ -85,8 +148,6 @@ async def run_session(ws: WebSocket, url: str) -> None:
     segment_ids: dict[int, str] = {}
     finalized_turns: set[int] = set()
     segment_seq = 0
-    source = URLAudioSource(url, settings.ingress_chunk_seconds)
-    stt = AssemblyAIStreamingClient()
 
     async def send(payload: dict) -> None:
         async with send_lock:
@@ -174,17 +235,12 @@ async def run_session(ws: WebSocket, url: str) -> None:
         {
             "type": "status",
             "level": "info",
-            "message": (
-                "YouTube 오디오를 준비하고 있습니다. "
-                f"cookies={_yes_no(_youtube_cookies_configured())}, "
-                f"proxy={_yes_no(bool(settings.ytdlp_proxy_url))}, "
-                f"impersonate={settings.ytdlp_impersonate or 'off'}"
-            ),
+            "message": starting_message,
         }
     )
 
     try:
-        async for event in stt.stream(source.stream_pcm()):
+        async for event in events:
             if event.type == "status":
                 await send({"type": "status", "level": "info", "message": "AssemblyAI STT에 연결되었습니다."})
                 continue
@@ -231,7 +287,6 @@ async def run_session(ws: WebSocket, url: str) -> None:
         if pending_partial_translation and not pending_partial_translation.done():
             pending_partial_translation.cancel()
             await asyncio.gather(pending_partial_translation, return_exceptions=True)
-        await source.stop()
 
 
 def _youtube_cookies_configured() -> bool:
