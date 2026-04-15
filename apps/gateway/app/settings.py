@@ -21,11 +21,15 @@ class Settings:
     assemblyai_format_turns = os.getenv("ASSEMBLYAI_FORMAT_TURNS", "true").lower() == "true"
 
     openai_api_key = os.getenv("OPENAI_API_KEY", "")
-    openai_model = os.getenv("OPENAI_MODEL", "gpt-5.3")
+    openai_model = os.getenv("OPENAI_MODEL", "gpt-4.1-mini")
+    openai_fallback_model = os.getenv("OPENAI_FALLBACK_MODEL", "gpt-4o-mini")
     openai_timeout = _float("OPENAI_TIMEOUT", 20.0)
     translation_context_size = int(os.getenv("TRANSLATION_CONTEXT_SIZE", "4"))
     partial_translation_delay = _float("PARTIAL_TRANSLATION_DELAY", 0.35)
     final_punctuation_delay = _float("FINAL_PUNCTUATION_DELAY", 0.85)
+
+    default_stream_url = os.getenv("DEFAULT_STREAM_URL", os.getenv("YOUTUBE_URL", ""))
+    auto_start_stream = os.getenv("AUTO_START_STREAM", "false").lower() == "true"
 
     ingress_chunk_seconds = _float("INGRESS_CHUNK_SECONDS", 0.16)
     ytdlp_proxy_url = os.getenv("YTDLP_PROXY_URL", "")

@@ -52,6 +52,15 @@ async def health() -> dict[str, str]:
     }
 
 
+@app.get("/config")
+async def config() -> dict[str, str | bool]:
+    return {
+        "default_stream_url": settings.default_stream_url,
+        "auto_start_stream": settings.auto_start_stream,
+        "openai_model": settings.openai_model,
+    }
+
+
 @app.websocket("/ws/ui")
 async def ui_ws(ws: WebSocket) -> None:
     await ws.accept()

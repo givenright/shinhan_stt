@@ -3,7 +3,7 @@ from __future__ import annotations
 import time
 from collections.abc import AsyncGenerator
 
-from openai import AsyncOpenAI
+from openai import AsyncOpenAI, BadRequestError
 
 from .settings import settings
 
@@ -43,18 +43,14 @@ class Translator:
 
     async def translate(self, text: str, context: list[str]) -> tuple[str, int]:
         started = time.time()
-        response = await self.client.responses.create(
-            model=settings.openai_model,
-            instructions=SYSTEM_PROMPT,
-            input=self._user_input(text, context),
-        )
+        response = await self._create_response(settings.openai_model, text, context)
         return response.output_text.strip(), round((time.time() - started) * 1000)
 
     async def stream_translate(self, text: str, context: list[str]) -> AsyncGenerator[tuple[str, int | None], None]:
         started = time.time()
         collected: list[str] = []
         stream = await self.client.responses.create(
-            model=settings.openai_model,
+            model=self._model_name(),
             instructions=SYSTEM_PROMPT,
             input=self._user_input(text, context),
             stream=True,
@@ -72,6 +68,25 @@ class Translator:
             return f"Current sentence:\n{text}"
         context_text = "\n".join(f"- {item}" for item in context[-settings.translation_context_size :])
         return f"Previous English context:\n{context_text}\n\nCurrent sentence:\n{text}"
+
+    async def _create_response(self, model: str, text: str, context: list[str]):
+        try:
+            return await self.client.responses.create(
+                model=model,
+                instructions=SYSTEM_PROMPT,
+                input=self._user_input(text, context),
+            )
+        except BadRequestError as exc:
+            if model != settings.openai_fallback_model and "model" in str(exc).lower():
+                return await self.client.responses.create(
+                    model=settings.openai_fallback_model,
+                    instructions=SYSTEM_PROMPT,
+                    input=self._user_input(text, context),
+                )
+            raise
+
+    def _model_name(self) -> str:
+        return settings.openai_model or settings.openai_fallback_model
 
     async def aclose(self) -> None:
         await self.client.close()

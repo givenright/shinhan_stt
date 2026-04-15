@@ -21,7 +21,10 @@ YouTube Live 또는 오디오 URL을 받아 AssemblyAI Streaming STT로 영어 �
 ```env
 ASSEMBLYAI_API_KEY=your_assemblyai_key
 OPENAI_API_KEY=your_openai_key
-OPENAI_MODEL=gpt-5.3
+OPENAI_MODEL=gpt-4.1-mini
+OPENAI_FALLBACK_MODEL=gpt-4o-mini
+DEFAULT_STREAM_URL=https://www.youtube.com/watch?v=replace-with-video-id
+AUTO_START_STREAM=false
 ASSEMBLYAI_STREAMING_MODEL=u3-rt-pro
 ASSEMBLYAI_SAMPLE_RATE=16000
 ASSEMBLYAI_FORMAT_TURNS=true
@@ -121,7 +124,7 @@ pip install -r apps/gateway/requirements.txt
 ```powershell
 $env:ASSEMBLYAI_API_KEY="your_assemblyai_key"
 $env:OPENAI_API_KEY="your_openai_key"
-$env:OPENAI_MODEL="gpt-5.3"
+$env:OPENAI_MODEL="gpt-4.1-mini"
 ```
 
 서버를 실행합니다.
@@ -143,7 +146,7 @@ docker build -t shinhan-live-stt .
 docker run --rm -p 8080:8080 \
   -e ASSEMBLYAI_API_KEY=your_assemblyai_key \
   -e OPENAI_API_KEY=your_openai_key \
-  -e OPENAI_MODEL=gpt-5.3 \
+  -e OPENAI_MODEL=gpt-4.1-mini \
   shinhan-live-stt
 ```
 
