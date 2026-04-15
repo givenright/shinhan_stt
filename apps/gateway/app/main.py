@@ -81,7 +81,9 @@ async def run_session(ws: WebSocket, url: str) -> None:
     send_lock = asyncio.Lock()
     context: deque[str] = deque(maxlen=settings.translation_context_size)
     pending_finalize: dict[int, asyncio.Task] = {}
+    pending_partial_translation: asyncio.Task | None = None
     segment_ids: dict[int, str] = {}
+    finalized_turns: set[int] = set()
     segment_seq = 0
     source = URLAudioSource(url, settings.ingress_chunk_seconds)
     stt = AssemblyAIStreamingClient()
@@ -95,8 +97,9 @@ async def run_session(ws: WebSocket, url: str) -> None:
         if delay:
             await asyncio.sleep(delay)
         text = event.text.strip()
-        if not text:
+        if not text or event.turn_order in finalized_turns:
             return
+        finalized_turns.add(event.turn_order)
 
         segment_id = segment_ids.get(event.turn_order)
         if segment_id is None:
@@ -117,36 +120,54 @@ async def run_session(ws: WebSocket, url: str) -> None:
         )
 
         await send({"type": "translation_start", "segment_id": segment_id, "seq": seq})
-        translated_parts: list[str] = []
-        trans_ms = 0
-        async for piece, elapsed_ms in translator.stream_translate(text, list(context)):
-            if elapsed_ms is None:
-                translated_parts.append(piece)
-                await send(
-                    {
-                        "type": "translation_delta",
-                        "segment_id": segment_id,
-                        "seq": seq,
-                        "text": piece,
-                    }
-                )
-            else:
-                trans_ms = elapsed_ms
-
-        korean = "".join(translated_parts).strip()
-        if korean:
-            context.append(text)
+        try:
+            korean, trans_ms = await translator.translate(text, list(context))
+        except Exception as exc:
             await send(
                 {
-                    "type": "segment",
+                    "type": "translation_error",
                     "segment_id": segment_id,
                     "seq": seq,
-                    "phase": "final_ko",
-                    "text": korean,
-                    "trans_ms": trans_ms,
-                    "total_ms": round((time.time() - started) * 1000),
+                    "message": _format_exception(exc),
                 }
             )
+            return
+
+        context.append(text)
+        await send(
+            {
+                "type": "segment",
+                "segment_id": segment_id,
+                "seq": seq,
+                "phase": "final_ko",
+                "text": korean,
+                "trans_ms": trans_ms,
+                "total_ms": round((time.time() - started) * 1000),
+            }
+        )
+
+    async def translate_partial(text: str, turn_order: int) -> None:
+        await asyncio.sleep(settings.partial_translation_delay)
+        if turn_order in finalized_turns:
+            return
+        korean, trans_ms = await translator.translate(text, list(context))
+        if turn_order in finalized_turns:
+            return
+        await send({"type": "partial_ko", "text": korean, "turn_order": turn_order, "trans_ms": trans_ms})
+
+    def schedule_partial_translation(text: str, turn_order: int) -> None:
+        nonlocal pending_partial_translation
+        if pending_partial_translation and not pending_partial_translation.done():
+            pending_partial_translation.cancel()
+        if len(text.strip()) < 12:
+            return
+        pending_partial_translation = asyncio.create_task(translate_partial(text, turn_order))
+
+    def schedule_finalize(event: SttEvent, delay: float) -> None:
+        existing = pending_finalize.pop(event.turn_order, None)
+        if existing:
+            existing.cancel()
+        pending_finalize[event.turn_order] = asyncio.create_task(finalize_turn(event, delay))
 
     await send({"type": "reset"})
     await send(
@@ -170,18 +191,17 @@ async def run_session(ws: WebSocket, url: str) -> None:
             if event.type != "turn" or not event.text:
                 continue
 
-            if not event.end_of_turn:
-                await send({"type": "partial", "text": event.text, "turn_order": event.turn_order})
+            text = event.text.strip()
+            if event.turn_order in finalized_turns:
                 continue
 
-            existing = pending_finalize.pop(event.turn_order, None)
-            if existing:
-                existing.cancel()
-                await asyncio.gather(existing, return_exceptions=True)
+            await send({"type": "partial", "text": text, "turn_order": event.turn_order})
+            schedule_partial_translation(text, event.turn_order)
 
-            delay = 0.0 if event.turn_is_formatted else 0.7
-            task = asyncio.create_task(finalize_turn(event, delay))
-            pending_finalize[event.turn_order] = task
+            if event.end_of_turn:
+                schedule_finalize(event, 0.05)
+            elif _looks_sentence_complete(text):
+                schedule_finalize(event, settings.final_punctuation_delay)
 
         if pending_finalize:
             await asyncio.gather(*pending_finalize.values(), return_exceptions=True)
@@ -202,17 +222,15 @@ async def run_session(ws: WebSocket, url: str) -> None:
                 "처리 중 오류가 발생했습니다. YouTube 차단이면 Railway 환경변수에 "
                 f"쿠키/프록시를 설정해야 할 수 있습니다. 상세: {detail}"
             )
-        await send(
-            {
-                "type": "error",
-                "message": message,
-            }
-        )
+        await send({"type": "error", "message": message})
     finally:
         for task in pending_finalize.values():
             if not task.done():
                 task.cancel()
         await asyncio.gather(*pending_finalize.values(), return_exceptions=True)
+        if pending_partial_translation and not pending_partial_translation.done():
+            pending_partial_translation.cancel()
+            await asyncio.gather(pending_partial_translation, return_exceptions=True)
         await source.stop()
 
 
@@ -229,3 +247,10 @@ def _format_exception(exc: BaseException) -> str:
     if message:
         return f"{type(exc).__name__}: {message}"
     return repr(exc)
+
+
+def _looks_sentence_complete(text: str) -> bool:
+    stripped = text.rstrip()
+    if len(stripped) < 24:
+        return False
+    return stripped.endswith((".", "?", "!", ".”", "?”", "!”"))
