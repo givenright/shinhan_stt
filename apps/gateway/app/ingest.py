@@ -26,6 +26,7 @@ class URLAudioSource:
     def __init__(self, url: str, chunk_seconds: float) -> None:
         self.url = url
         self.chunk_bytes = int(settings.assemblyai_sample_rate * chunk_seconds * 2)
+        self.min_chunk_bytes = int(settings.assemblyai_sample_rate * 0.05 * 2)
         self.env = _clean_env()
         self.proc: subprocess.Popen[bytes] | None = None
         self._temp_cookie_path: Path | None = None
@@ -145,13 +146,20 @@ class URLAudioSource:
             stdin=subprocess.DEVNULL,
             bufsize=0,
         )
+        pending = bytearray()
         try:
             while True:
                 assert self.proc.stdout is not None
                 data = await asyncio.to_thread(self.proc.stdout.read, self.chunk_bytes)
                 if not data:
                     break
-                yield data
+                pending.extend(data)
+                while len(pending) >= self.chunk_bytes:
+                    chunk = bytes(pending[: self.chunk_bytes])
+                    del pending[: self.chunk_bytes]
+                    yield chunk
+            if len(pending) >= self.min_chunk_bytes:
+                yield bytes(pending)
         finally:
             await self.stop()
 
