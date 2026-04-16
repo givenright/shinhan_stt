@@ -248,6 +248,7 @@ async def run_stt_translation_session(ws: WebSocket, events, starting_message: s
     latest_partial: dict[str, object] = {"text": "", "turn_order": -1, "version": 0}
     partial_event = asyncio.Event()
     partial_tasks: set[asyncio.Task] = set()
+    last_partial_ko = ""
 
     async def send(payload: dict) -> None:
         async with send_lock:
@@ -265,6 +266,7 @@ async def run_stt_translation_session(ws: WebSocket, events, starting_message: s
         return segment_id, int(segment_id.split("_")[-1])
 
     async def translate_partial_snapshot(text: str, turn_order: int, version: int) -> None:
+        nonlocal last_partial_ko
         started = time.time()
         await send({"type": "translation_start", "segment_id": f"partial_{turn_order}", "seq": turn_order})
         try:
@@ -273,6 +275,7 @@ async def run_stt_translation_session(ws: WebSocket, events, starting_message: s
             await send({"type": "partial_translation_error", "message": _format_exception(exc)})
             return
         if korean:
+            last_partial_ko = korean
             await send(
                 {
                     "type": "partial_ko",
@@ -286,8 +289,8 @@ async def run_stt_translation_session(ws: WebSocket, events, starting_message: s
             )
 
     async def partial_translation_worker() -> None:
-        last_started_text = ""
         last_started_at = 0.0
+        last_started_version = -1
         while True:
             try:
                 await asyncio.wait_for(partial_event.wait(), timeout=0.1)
@@ -300,13 +303,25 @@ async def run_stt_translation_session(ws: WebSocket, events, starting_message: s
             now = time.monotonic()
             if not _should_partial_translate(text):
                 continue
-            if text == last_started_text:
-                continue
-            if now - last_started_at < settings.partial_translation_interval and partial_tasks:
+            if version == last_started_version and now - last_started_at < settings.partial_translation_interval:
                 continue
             if len(partial_tasks) >= settings.partial_translation_concurrency:
                 continue
-            last_started_text = text
+            if version == last_started_version and last_partial_ko:
+                await send(
+                    {
+                        "type": "partial_ko",
+                        "text": last_partial_ko,
+                        "source_text": text,
+                        "turn_order": turn_order,
+                        "version": version,
+                        "trans_ms": 0,
+                        "cached": True,
+                    }
+                )
+                last_started_at = now
+                continue
+            last_started_version = version
             last_started_at = now
             task = asyncio.create_task(translate_partial_snapshot(text, turn_order, version))
             partial_tasks.add(task)
