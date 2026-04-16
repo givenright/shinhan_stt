@@ -66,6 +66,17 @@ class URLAudioSource:
         raise RuntimeError("Could not resolve a playable media URL.")
 
     def _ydl_opts(self, use_impersonate: bool) -> dict[str, object]:
+        youtube_args: dict[str, list[str]] = {
+            "player_client": [item.strip() for item in settings.ytdlp_player_clients.split(",") if item.strip()],
+        }
+        if settings.ytdlp_visitor_data:
+            youtube_args["player_skip"] = ["webpage", "configs"]
+            youtube_args["visitor_data"] = [settings.ytdlp_visitor_data]
+        if settings.ytdlp_po_token:
+            youtube_args["po_token"] = [settings.ytdlp_po_token]
+        if settings.ytdlp_data_sync_id:
+            youtube_args["data_sync_id"] = [settings.ytdlp_data_sync_id]
+
         ydl_opts: dict[str, object] = {
             "quiet": True,
             "no_warnings": True,
@@ -81,7 +92,7 @@ class URLAudioSource:
                 ),
                 "Accept-Language": "en-US,en;q=0.9,ko;q=0.8",
             },
-            "extractor_args": {"youtube": {"player_client": ["android", "web"]}},
+            "extractor_args": {"youtube": youtube_args},
         }
         if settings.ytdlp_proxy_url:
             ydl_opts["proxy"] = settings.ytdlp_proxy_url

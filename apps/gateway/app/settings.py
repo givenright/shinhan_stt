@@ -39,6 +39,10 @@ class Settings:
     ytdlp_cookies_b64 = os.getenv("YTDLP_COOKIES_B64", "")
     ytdlp_cookies_file = os.getenv("YTDLP_COOKIES_FILE", "")
     ytdlp_impersonate = os.getenv("YTDLP_IMPERSONATE", "chrome")
+    ytdlp_player_clients = os.getenv("YTDLP_PLAYER_CLIENTS", "mweb,web_safari,tv,android,web")
+    ytdlp_visitor_data = os.getenv("YTDLP_VISITOR_DATA", "")
+    ytdlp_po_token = os.getenv("YTDLP_PO_TOKEN", "")
+    ytdlp_data_sync_id = os.getenv("YTDLP_DATA_SYNC_ID", "")
 
 
 settings = Settings()

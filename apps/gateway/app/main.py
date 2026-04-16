@@ -49,6 +49,9 @@ async def health() -> dict[str, str]:
         "youtube_cookies": "configured" if _youtube_cookies_configured() else "missing",
         "youtube_proxy": "configured" if settings.ytdlp_proxy_url else "missing",
         "youtube_impersonate": settings.ytdlp_impersonate or "disabled",
+        "youtube_player_clients": settings.ytdlp_player_clients,
+        "youtube_visitor_data": "configured" if settings.ytdlp_visitor_data else "missing",
+        "youtube_po_token": "configured" if settings.ytdlp_po_token else "missing",
     }
 
 
@@ -102,7 +105,8 @@ async def run_url_session(ws: WebSocket, url: str) -> None:
                 "YouTube 오디오를 준비하고 있습니다. "
                 f"cookies={_yes_no(_youtube_cookies_configured())}, "
                 f"proxy={_yes_no(bool(settings.ytdlp_proxy_url))}, "
-                f"impersonate={settings.ytdlp_impersonate or 'off'}"
+                f"impersonate={settings.ytdlp_impersonate or 'off'}, "
+                f"clients={settings.ytdlp_player_clients}"
             ),
         )
     finally:
