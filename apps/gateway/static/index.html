@@ -27,6 +27,7 @@ h1{font-size:20px}
 .status.error{color:#f09595}.status.success{color:#5dcaa5}
 .stats{padding:8px 12px;border-bottom:1px solid #252536;color:#8b93a3;font-size:11px;display:flex;gap:12px;flex-wrap:wrap}
 .stats b{color:#d9e8ff;font-weight:800}
+.phone-audio{width:100%;height:38px;border-bottom:1px solid #252536;background:#10101a;display:block}
 .stage{position:relative;background:#050508;min-height:430px;display:flex;align-items:center;justify-content:center;padding:20px}
 .wave{width:min(620px,100%);min-height:280px;display:flex;flex-direction:column;justify-content:center;gap:16px}
 .thumbnail{width:min(460px,100%);align-self:center;border-radius:8px;border:1px solid rgba(255,255,255,.14);background:#fff;box-shadow:0 16px 40px rgba(0,0,0,.32)}
@@ -45,7 +46,13 @@ h1{font-size:20px}
 .ko{font-size:17px;color:#f4f7fb;line-height:1.65;white-space:pre-wrap;overflow-wrap:anywhere}
 .en{font-size:13px;color:#8b93a3;line-height:1.6;margin-top:9px;padding-top:9px;border-top:1px solid #252536;white-space:pre-wrap;overflow-wrap:anywhere}
 .draft{border-left:3px solid #ba7517}.final{border-left:3px solid #1d9e75}
-.feed{display:flex;flex-direction:column;gap:8px;height:560px;max-height:62vh;overflow:auto;padding-right:4px;scroll-behavior:smooth}
+.mini-btn{height:28px;border:1px solid #2a2a38;background:#1a1a24;color:#d9e8ff;border-radius:8px;padding:0 9px;font-size:11px;font-weight:800;cursor:pointer}
+.feed{display:flex;flex-direction:column;gap:8px;height:640px;max-height:68vh;overflow-y:auto;overflow-x:hidden;padding:2px 4px 2px 0;scroll-behavior:smooth;overscroll-behavior:contain}
+.history-entry{border-left:3px solid #ba7517;background:#10101a;border-radius:8px;padding:10px 11px}
+.history-entry.is-final{border-left-color:#1d9e75;background:#121922}
+.history-meta{display:flex;justify-content:space-between;gap:8px;color:#8b93a3;font-size:11px;font-weight:800;margin-bottom:6px}
+.history-ko{font-size:15px;line-height:1.55;color:#f4f7fb;white-space:pre-wrap;overflow-wrap:anywhere}
+.history-en{font-size:12px;line-height:1.45;color:#8b93a3;border-top:1px solid #252536;margin-top:7px;padding-top:7px;white-space:pre-wrap;overflow-wrap:anywhere}
 .mini{font-size:12px;color:#646b78;line-height:1.6}
 @keyframes pulse{0%,100%{height:18px;opacity:.48}50%{height:88px;opacity:1}}
 @keyframes swapCaption{0%{opacity:.35;transform:translateY(5px)}100%{opacity:1;transform:translateY(0)}}
@@ -79,6 +86,7 @@ h1{font-size:20px}
         <span>Packets: <b id="audioPackets">0</b></span>
         <span>KB: <b id="audioKb">0</b></span>
       </div>
+      <audio class="phone-audio" id="phoneAudio" controls playsinline preload="none"></audio>
       <div class="stage">
         <div class="wave">
           <img class="thumbnail" src="/static/tesla-thumbnail.png" alt="Tesla 2026 Q1 Financial Results">
@@ -104,7 +112,11 @@ h1{font-size:20px}
         <div class="en" id="liveEnglish">Final English sentence appears here.</div>
       </div>
       <div class="card">
-        <div class="head"><span class="label">SEGMENTS</span><span class="pill">Log</span></div>
+        <div class="head">
+          <span class="label">CAPTION HISTORY</span>
+          <button class="mini-btn" id="latestBtn">Latest</button>
+          <span class="pill" id="historyCount">0</span>
+        </div>
         <div class="feed" id="feed"><div class="mini">No confirmed segments yet.</div></div>
       </div>
     </aside>
@@ -127,11 +139,15 @@ const stopBtn = $("stopBtn");
 const audioState = $("audioState");
 const audioPacketsEl = $("audioPackets");
 const audioKbEl = $("audioKb");
+const phoneAudio = $("phoneAudio");
+const latestBtn = $("latestBtn");
+const historyCount = $("historyCount");
 
 let viewerWs = null;
 let adminWs = null;
 let urlWs = null;
 let playbackContext = null;
+let playbackDestination = null;
 let playbackTime = 0;
 let captureStream = null;
 let captureContext = null;
@@ -141,6 +157,7 @@ let audioPackets = 0;
 let audioBytes = 0;
 let lastAudioNoticeAt = 0;
 let pendingAudioBuffers = [];
+let historyItems = [];
 const AudioContextClass = window.AudioContext || window.webkitAudioContext;
 const segments = new Map();
 
@@ -170,20 +187,38 @@ function setCaptions(en, ko, animateKo = false) {
 }
 function resetUi() {
   segments.clear();
+  historyItems = [];
   partialEnglish.textContent = "English draft appears here.";
   partialKorean.textContent = "Korean draft appears every second as speech is detected.";
   liveEnglish.textContent = "Final English sentence appears here.";
   liveKorean.textContent = "Final Korean sentence appears here.";
   feed.innerHTML = '<div class="mini">No confirmed segments yet.</div>';
+  historyCount.textContent = "0";
   modePill.textContent = "Waiting";
   setCaptions("English captions waiting", "Korean captions waiting");
 }
+function addHistory(kind, ko, en = "") {
+  const text = String(ko || "").trim();
+  if (!text) return;
+  const last = historyItems[historyItems.length - 1];
+  if (last && last.kind === kind && last.ko === text && Date.now() - last.ts < 1400) return;
+  historyItems.push({
+    id: historyItems.length + 1,
+    kind,
+    ko: text,
+    en: String(en || "").trim(),
+    ts: Date.now(),
+  });
+  historyItems = historyItems.slice(-250);
+  renderFeed();
+}
 function renderFeed() {
-  const shouldStickToBottom = feed.scrollTop + feed.clientHeight >= feed.scrollHeight - 40;
-  const items = [...segments.values()].filter(item => !item.partial).sort((a, b) => a.seq - b.seq).slice(-80);
+  const shouldStickToBottom = feed.scrollTop + feed.clientHeight >= feed.scrollHeight - 80;
+  const items = historyItems.slice(-250);
+  historyCount.textContent = String(items.length);
   feed.innerHTML = items.length
-    ? items.map(item => `<div class="card final"><div class="head"><span class="label">${esc(item.id)}</span><span class="pill">${item.transMs ? item.transMs + "ms" : "Translating"}</span></div><div class="ko">${esc(item.ko || "Translating...")}</div><div class="en">${esc(item.en || "Waiting for English...")}</div></div>`).join("")
-    : '<div class="mini">No confirmed segments yet.</div>';
+    ? items.map(item => `<div class="history-entry ${item.kind === "final" ? "is-final" : ""}"><div class="history-meta"><span>${item.kind === "final" ? "FINAL" : "LIVE"} #${item.id}</span><span>${new Date(item.ts).toLocaleTimeString([], {hour:"2-digit", minute:"2-digit", second:"2-digit"})}</span></div><div class="history-ko">${esc(item.ko)}</div>${item.en ? `<div class="history-en">${esc(item.en)}</div>` : ""}</div>`).join("")
+    : '<div class="mini">No captions yet.</div>';
   if (shouldStickToBottom) feed.scrollTop = feed.scrollHeight;
 }
 function handlePayload(payload) {
@@ -205,6 +240,7 @@ function handlePayload(payload) {
     partialKorean.textContent = payload.text || "";
     setCaptions(undefined, payload.text || "");
     modePill.textContent = payload.trans_ms ? `KO ${payload.trans_ms}ms` : "Live KO";
+    addHistory("live", payload.text || "", payload.source_text || "");
   } else if (payload.type === "partial_translation_error") {
     modePill.textContent = "KO error";
     partialKorean.textContent = "Translation error: " + (payload.message || "unknown");
@@ -233,6 +269,7 @@ function handlePayload(payload) {
       item.transMs = payload.trans_ms || 0;
       liveKorean.textContent = item.ko;
       setCaptions(undefined, item.ko, true);
+      addHistory("final", item.ko, item.en);
       partialKorean.textContent = "Translating the next sentence.";
       modePill.textContent = "Final";
       setStatus("Final sentence updated.", "success");
@@ -263,7 +300,10 @@ async function enableAudio() {
       throw new Error("This browser does not support Web Audio playback.");
     }
     playbackContext = playbackContext || new AudioContextClass();
+    playbackDestination = playbackDestination || playbackContext.createMediaStreamDestination();
+    if (!phoneAudio.srcObject) phoneAudio.srcObject = playbackDestination.stream;
     await playbackContext.resume();
+    await phoneAudio.play().catch(() => {});
     const silent = playbackContext.createBuffer(1, 1, playbackContext.sampleRate);
     const unlock = playbackContext.createBufferSource();
     unlock.buffer = silent;
@@ -312,6 +352,7 @@ async function playPcm(arrayBuffer) {
   const source = playbackContext.createBufferSource();
   source.buffer = audioBuffer;
   source.connect(playbackContext.destination);
+  if (playbackDestination) source.connect(playbackDestination);
   if (playbackTime > playbackContext.currentTime + 1.5) {
     playbackTime = playbackContext.currentTime + 0.08;
   }
@@ -427,6 +468,9 @@ function stopAll() {
   setStatus("Stopped.");
 }
 audioBtn.onclick = enableAudio;
+latestBtn.onclick = () => {
+  feed.scrollTop = feed.scrollHeight;
+};
 document.addEventListener("pointerdown", () => {
   if (!playbackContext && audioPackets > 0) enableAudio();
 }, {passive: true});
