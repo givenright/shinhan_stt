@@ -1,29 +1,22 @@
 # shinhan_stt
 
-IR 웹캐스트 URL을 서버가 직접 가져와 AssemblyAI STT로 영어를 전사하고, OpenAI로 한국어 실시간 자막을 만드는 FastAPI 서비스입니다.
+Live earnings-call audio caption service.
 
-현재 기본 테스트 URL:
-
-```text
-https://ir.tesla.com/webcast-2026-01-28
-```
-
-## 구조
+The main production path is now admin audio broadcast:
 
 ```text
-IR Webcast URL
-  └─ 서버: 웹페이지 HTML에서 iframe/미디어/YouTube/웹캐스트 링크 탐색
-       └─ yt-dlp 또는 ffmpeg로 실제 오디오 추출
-            └─ AssemblyAI Streaming STT
-                 └─ OpenAI 번역
-                      └─ WebSocket으로 영어/한국어 자막 표시
+Admin browser audio
+  -> WebSocket PCM upload
+  -> AssemblyAI Streaming STT
+  -> OpenAI Korean translation
+  -> Customer audio + English/Korean captions
 ```
 
-직접 HLS/MP4/audio URL도 지원합니다.
+This avoids Railway/YouTube bot blocking because the server does not need to fetch the YouTube video directly. The admin plays the YouTube earnings call in a browser and shares that tab/window/system audio. Customers only receive the audio and captions.
 
 ## Railway Variables
 
-Railway `Variables`에 아래 값을 넣습니다.
+For the admin audio broadcast mode, these are the important variables:
 
 ```env
 ASSEMBLYAI_API_KEY=your_assemblyai_key
@@ -31,25 +24,31 @@ OPENAI_API_KEY=your_openai_key
 OPENAI_MODEL=gpt-4.1-mini
 OPENAI_FALLBACK_MODEL=gpt-4o-mini
 
-DEFAULT_STREAM_URL=https://ir.tesla.com/webcast-2026-01-28
-AUTO_START_STREAM=false
-
 ASSEMBLYAI_STREAMING_MODEL=u3-rt-pro
 ASSEMBLYAI_SAMPLE_RATE=16000
 ASSEMBLYAI_FORMAT_TURNS=true
 ASSEMBLYAI_MIN_TURN_SILENCE_MS=250
 ASSEMBLYAI_MAX_TURN_SILENCE_MS=550
 
-INGRESS_CHUNK_SECONDS=0.08
 TRANSLATION_CONTEXT_SIZE=4
 PARTIAL_TRANSLATION_DELAY=0.0
 PARTIAL_TRANSLATION_INTERVAL=1.0
 PARTIAL_TRANSLATION_CONCURRENCY=3
 FINAL_PUNCTUATION_DELAY=0.25
 OPENAI_TIMEOUT=20
+```
+
+Optional URL fallback variables are still supported, but they can be blocked by YouTube on Railway:
+
+```env
+DEFAULT_STREAM_URL=
+AUTO_START_STREAM=false
+INGRESS_CHUNK_SECONDS=0.08
 
 YTDLP_IMPERSONATE=chrome
-YTDLP_PLAYER_CLIENTS=mweb,web_safari,tv,android,web
+YTDLP_PLAYER_CLIENTS=mweb,web_safari,web_embedded,web_creator,ios,android,tv
+YTDLP_FORCE_IPV4=true
+YTDLP_SLEEP_REQUESTS=0.2
 YTDLP_PROXY_URL=
 YTDLP_COOKIES=
 YTDLP_COOKIES_B64=
@@ -59,67 +58,60 @@ YTDLP_PO_TOKEN=
 YTDLP_DATA_SYNC_ID=
 ```
 
-## Railway 배포
+## How To Use
 
-1. 변경사항을 GitHub에 push합니다.
-2. Railway에서 `New Project`를 누릅니다.
-3. `Deploy from GitHub repo`를 선택합니다.
-4. 이 저장소를 연결합니다.
-5. Railway가 루트 `Dockerfile`과 `railway.json`을 사용해 배포합니다.
-6. Railway `Variables`에 위 값을 넣습니다.
-7. Railway에서 public domain을 생성합니다.
-8. 아래 주소를 열어 상태를 확인합니다.
+1. Deploy the service on Railway.
+2. Customers open the Railway URL and click `Enable Audio`.
+3. Admin opens the same Railway URL in Chrome or Edge.
+4. Admin plays the YouTube earnings call in another tab, window, or browser.
+5. Admin clicks `Start Admin Broadcast`.
+6. In the browser sharing dialog, choose the tab/window/screen that contains the earnings call and enable `Share audio` or `System audio`.
+7. Customers hear the same audio and see English/Korean captions.
+
+Important: customers do not share their microphone or screen. Only the admin shares the call audio.
+
+## Realtime Caption Behavior
+
+- English partial captions appear as soon as AssemblyAI sends partial turns.
+- Korean draft translations are requested continuously, roughly once per second when new English text arrives.
+- The Korean draft can change while the speaker is still talking.
+- When AssemblyAI marks a turn as complete, the final English sentence is translated again.
+- The final Korean translation replaces the draft caption with a visual swap effect.
+
+## Why This Solves YouTube Blocking
+
+The previous server URL mode depended on Railway fetching YouTube directly with `yt-dlp`. YouTube can classify Railway data-center traffic as bot traffic and return `Sign in to confirm you're not a bot`.
+
+Admin audio broadcast changes the path:
+
+```text
+YouTube plays in admin browser
+  -> admin browser captures the already-playing audio
+  -> your server receives raw audio
+  -> customers receive audio and captions
+```
+
+So YouTube is loaded by a real browser session, not by Railway.
+
+## Deploy
+
+1. Push this repository to GitHub.
+2. In Railway, create a new project from the GitHub repository.
+3. Add the required variables above.
+4. Redeploy.
+5. Open:
 
 ```text
 https://your-app.up.railway.app/health
 https://your-app.up.railway.app/config
 ```
 
-## 사용법
-
-1. 서비스 URL을 엽니다.
-2. 입력창에 아래 URL이 들어 있는지 확인합니다.
-
-```text
-https://ir.tesla.com/webcast-2026-01-28
-```
-
-3. `URL 시작`을 누릅니다.
-4. 서버가 페이지 내부의 실제 웹캐스트/미디어 URL을 찾아 오디오를 추출합니다.
-5. 영어 STT와 한국어 번역이 화면에 표시됩니다.
-
-## 실시간 자막 방식
-
-- 영어 partial STT가 오면 즉시 영어 자막을 표시합니다.
-- 문장이 끝날 때까지 기다리지 않고 partial 한국어 번역을 계속 시도합니다.
-- AssemblyAI가 `end_of_turn`을 보내면 최종 영어 문장으로 다시 한국어 확정 번역을 만듭니다.
-- 최종 번역은 화면 효과와 함께 기존 초안 자막을 교체합니다.
-
-## 웹캐스트 URL 해석 방식
-
-`https://ir.tesla.com/webcast-2026-01-28` 같은 IR 페이지는 실제 미디어 URL이 페이지 내부 iframe이나 스크립트에 숨어 있을 수 있습니다.
-
-이 프로젝트는 URL 시작 시 아래 순서로 시도합니다.
-
-1. 입력 URL이 직접 미디어 URL인지 확인
-2. `yt-dlp`로 입력 URL 직접 해석
-3. 실패하면 HTML을 받아 iframe, href, src, JSON 안의 URL 후보 탐색
-4. YouTube embed URL은 watch URL로 변환
-5. m3u8, mp4, mp3, YouTube, Brightcove, livestream, ON24, Akamai, CloudFront 후보를 다시 해석
-6. 성공한 실제 오디오를 ffmpeg로 16kHz PCM 변환
-
-## 주의
-
-- Tesla IR 페이지 내부가 YouTube로 연결되어 있고 Railway가 그 YouTube URL을 차단하면 쿠키/프록시가 필요할 수 있습니다.
-- API key와 쿠키는 GitHub에 올리지 말고 Railway Variables에만 넣으세요.
-
-## 로컬 실행
+## Local Run
 
 ```powershell
 $env:ASSEMBLYAI_API_KEY="your_assemblyai_key"
 $env:OPENAI_API_KEY="your_openai_key"
 $env:OPENAI_MODEL="gpt-4.1-mini"
-$env:DEFAULT_STREAM_URL="https://ir.tesla.com/webcast-2026-01-28"
 ```
 
 ```bash
@@ -127,7 +119,7 @@ pip install -r apps/gateway/requirements.txt
 uvicorn app.main:app --app-dir apps/gateway --host 0.0.0.0 --port 8080
 ```
 
-브라우저에서 엽니다.
+Open:
 
 ```text
 http://localhost:8080

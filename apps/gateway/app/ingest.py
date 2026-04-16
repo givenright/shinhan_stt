@@ -14,6 +14,7 @@ from urllib.parse import parse_qs, urljoin, urlparse
 
 import httpx
 import yt_dlp
+from curl_cffi import requests as curl_requests
 
 from .settings import settings
 
@@ -82,32 +83,79 @@ class URLAudioSource:
             "Accept-Language": "en-US,en;q=0.9,ko;q=0.8",
         }
 
+    def _fetch_text(self, url: str) -> tuple[str, str]:
+        try:
+            with httpx.Client(
+                headers=self._html_headers(),
+                follow_redirects=True,
+                timeout=20.0,
+                trust_env=False,
+                proxy=settings.ytdlp_proxy_url or None,
+            ) as client:
+                response = client.get(url)
+                response.raise_for_status()
+                return response.text, str(response.url)
+        except Exception:
+            request_kwargs: dict[str, object] = {
+                "headers": self._html_headers(),
+                "impersonate": settings.ytdlp_impersonate or "chrome",
+                "timeout": 20,
+                "allow_redirects": True,
+            }
+            if settings.ytdlp_proxy_url:
+                request_kwargs["proxy"] = settings.ytdlp_proxy_url
+            proxy_keys = ["HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "http_proxy", "https_proxy", "all_proxy"]
+            saved_proxy_env = {key: os.environ.get(key) for key in proxy_keys}
+            if not settings.ytdlp_proxy_url:
+                for key in proxy_keys:
+                    os.environ.pop(key, None)
+            try:
+                response = curl_requests.get(url, **request_kwargs)
+            finally:
+                for key, value in saved_proxy_env.items():
+                    if value is None:
+                        os.environ.pop(key, None)
+                    else:
+                        os.environ[key] = value
+            response.raise_for_status()
+            return response.text, response.url
+
     def _webpage_candidates(self, page_url: str) -> list[str]:
         try:
-            with httpx.Client(headers=self._html_headers(), follow_redirects=True, timeout=20.0) as client:
-                response = client.get(page_url)
-                response.raise_for_status()
+            html, final_url = self._fetch_text(page_url)
         except Exception:
             return []
 
-        html = response.text
         candidates: list[str] = []
         raw_matches: list[str] = []
         raw_matches.extend(re.findall(r"""(?:src|href|data-url|data-src)=["']([^"']+)["']""", html, flags=re.I))
         raw_matches.extend(re.findall(r"""https?:\\/\\/[^"'<>\s]+""", html))
         raw_matches.extend(re.findall(r"""https?://[^"'<>\s]+""", html))
+        script_sources = [
+            urljoin(final_url, item.replace("&amp;", "&").strip())
+            for item in re.findall(r"""<script[^>]+src=["']([^"']+)["']""", html, flags=re.I)
+        ]
+
+        for script_url in script_sources[:20]:
+            try:
+                script_text, _ = self._fetch_text(script_url)
+            except Exception:
+                continue
+            raw_matches.extend(re.findall(r"""https?:\\/\\/[^"'<>\s]+""", script_text))
+            raw_matches.extend(re.findall(r"""https?://[^"'<>\s]+""", script_text))
+            raw_matches.extend(re.findall(r"""(?:src|href|url|webcast|iframe|embed)["']?\s*[:=]\s*["']([^"']+)["']""", script_text, flags=re.I))
 
         for raw in raw_matches:
             cleaned = raw.replace("\\/", "/").replace("&amp;", "&").strip()
             if not cleaned or cleaned.startswith(("data:", "mailto:", "tel:")):
                 continue
-            absolute = urljoin(str(response.url), cleaned)
+            absolute = urljoin(final_url, cleaned)
             normalized = self._normalize_candidate_url(absolute)
             if normalized and normalized not in candidates:
                 candidates.append(normalized)
 
         ranked = sorted(candidates, key=self._candidate_rank)
-        return ranked[:20]
+        return ranked[:40]
 
     def _normalize_candidate_url(self, url: str) -> str | None:
         parsed = urlparse(url)
@@ -147,9 +195,21 @@ class URLAudioSource:
             return (3, url)
         return (9, url)
 
-    def _ydl_opts(self, use_impersonate: bool) -> dict[str, object]:
+    def _youtube_client_groups(self) -> list[list[str]]:
+        configured = [item.strip() for item in settings.ytdlp_player_clients.split(",") if item.strip()]
+        fallback = ["mweb", "web_safari", "web_embedded", "web_creator", "ios", "android", "tv"]
+        ordered = []
+        for item in [*configured, *fallback]:
+            if item and item not in ordered:
+                ordered.append(item)
+        groups = [[item] for item in ordered]
+        if ordered:
+            groups.append(ordered)
+        return groups
+
+    def _ydl_opts(self, use_impersonate: bool, player_clients: list[str]) -> dict[str, object]:
         youtube_args: dict[str, list[str]] = {
-            "player_client": [item.strip() for item in settings.ytdlp_player_clients.split(",") if item.strip()],
+            "player_client": player_clients,
         }
         if settings.ytdlp_visitor_data:
             youtube_args["player_skip"] = ["webpage", "configs"]
@@ -163,16 +223,25 @@ class URLAudioSource:
             "quiet": True,
             "no_warnings": True,
             "noplaylist": True,
-            "format": "bestaudio/best",
-            "retries": 5,
-            "fragment_retries": 5,
+            "skip_download": True,
+            "cachedir": False,
+            "format": "bestaudio[ext=m4a]/bestaudio/best",
+            "retries": 10,
+            "extractor_retries": 5,
+            "fragment_retries": 10,
+            "file_access_retries": 5,
             "socket_timeout": 20,
+            "sleep_interval_requests": settings.ytdlp_sleep_requests,
+            "geo_bypass": True,
+            "force_ipv4": settings.ytdlp_force_ipv4,
             "http_headers": {
                 "User-Agent": (
                     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
-                    "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+                    "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
                 ),
                 "Accept-Language": "en-US,en;q=0.9,ko;q=0.8",
+                "Origin": "https://www.youtube.com",
+                "Referer": "https://www.youtube.com/",
             },
             "extractor_args": {"youtube": youtube_args},
         }
@@ -192,28 +261,31 @@ class URLAudioSource:
             self._resolved_headers = {}
             return self.url
 
-        candidates = [self.url]
-        candidates.extend(candidate for candidate in self._webpage_candidates(self.url) if candidate != self.url)
+        page_candidates = self._webpage_candidates(self.url)
+        candidates = []
+        candidates.extend(candidate for candidate in page_candidates if candidate != self.url)
+        candidates.append(self.url)
         tried: list[str] = []
-        attempts = [bool(settings.ytdlp_impersonate), False]
+        impersonation_attempts = [bool(settings.ytdlp_impersonate), False]
+        client_groups = self._youtube_client_groups()
         last_error: BaseException | None = None
         for candidate in candidates:
-            tried.append(candidate)
             if self._is_direct_media_url(candidate):
+                tried.append(candidate)
                 self._resolved_headers = {}
                 return candidate
-            for use_impersonate in dict.fromkeys(attempts):
-                try:
-                    with yt_dlp.YoutubeDL(self._ydl_opts(use_impersonate)) as ydl:
-                        info = ydl.extract_info(candidate, download=False)
-                        self._resolved_headers = {
-                            str(k): str(v) for k, v in (info.get("http_headers") or {}).items() if v
-                        }
-                        return self._best_media_url(info)
-                except Exception as exc:
-                    last_error = exc
-                    if not use_impersonate:
-                        break
+            for player_clients in client_groups:
+                for use_impersonate in dict.fromkeys(impersonation_attempts):
+                    tried.append(f"{candidate} clients={','.join(player_clients)} impersonate={use_impersonate}")
+                    try:
+                        with yt_dlp.YoutubeDL(self._ydl_opts(use_impersonate, player_clients)) as ydl:
+                            info = ydl.extract_info(candidate, download=False)
+                            self._resolved_headers = {
+                                str(k): str(v) for k, v in (info.get("http_headers") or {}).items() if v
+                            }
+                            return self._best_media_url(info)
+                    except Exception as exc:
+                        last_error = exc
         tried_text = ", ".join(tried[:6])
         raise RuntimeError(f"yt-dlp URL resolve failed after trying [{tried_text}]: {_format_exception(last_error)}")
 

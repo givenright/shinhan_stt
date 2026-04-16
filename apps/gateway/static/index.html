@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>YouTube Live Caption</title>
+<title>Live Earnings Audio Caption</title>
 <style>
 *{box-sizing:border-box;margin:0;padding:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Arial,sans-serif}
 body{background:#0e0e14;color:#fff;min-height:100vh}
@@ -16,34 +16,37 @@ h1{font-size:20px}
 .sub{font-size:12px;color:#8b93a3;margin-top:3px}
 .live{display:flex;align-items:center;gap:6px;color:#f09595;font-size:13px;font-weight:700}
 .dot{width:8px;height:8px;border-radius:50%;background:#e24b4a}
-.grid{display:grid;grid-template-columns:minmax(0,1.35fr) minmax(330px,.65fr);gap:16px;align-items:start}
+.grid{display:grid;grid-template-columns:minmax(0,1.2fr) minmax(330px,.8fr);gap:16px;align-items:start}
 .panel,.card{background:#131320;border:1px solid #252536;border-radius:8px;overflow:hidden}
-.controls{padding:12px;display:grid;grid-template-columns:1fr 108px 74px;gap:8px;border-bottom:1px solid #252536}
+.controls{padding:12px;display:grid;grid-template-columns:1fr 118px 172px 74px;gap:8px;border-bottom:1px solid #252536}
 .url{height:42px;background:#1a1a24;border:1px solid #2a2a38;border-radius:8px;color:#e7eaf0;padding:0 12px;font-size:13px;min-width:0}
 .btn{height:42px;border:0;border-radius:8px;color:#fff;font-size:13px;font-weight:800;cursor:pointer}
-.start{background:#185fa5}.stop{background:#501313;color:#f7c1c1}
+.btn:disabled{opacity:.52;cursor:not-allowed}
+.audio{background:#1d7f64}.admin{background:#185fa5}.start{background:#344667}.stop{background:#501313;color:#f7c1c1}
 .status{padding:10px 12px;border-bottom:1px solid #252536;color:#8b93a3;font-size:12px;line-height:1.5;min-height:39px;overflow-wrap:anywhere}
 .status.error{color:#f09595}.status.success{color:#5dcaa5}
-.stage{position:relative;background:#050508;aspect-ratio:16/9}
-.stage iframe,.stage video{position:absolute;inset:0;width:100%;height:100%;border:0;background:#050508;object-fit:contain}
-.placeholder{position:absolute;inset:0;display:grid;place-items:center;text-align:center;color:#646b78;font-size:14px;line-height:1.6;padding:22px}
-.captions{position:absolute;left:20px;right:20px;bottom:18px;display:flex;flex-direction:column;gap:7px;z-index:4;pointer-events:none}
-.caption{background:rgba(0,0,0,.76);border:1px solid rgba(255,255,255,.12);border-radius:8px;padding:9px 12px;text-shadow:0 1px 1px #000;box-shadow:0 10px 28px rgba(0,0,0,.25);overflow-wrap:anywhere}
+.stage{position:relative;background:#050508;min-height:430px;display:flex;align-items:center;justify-content:center;padding:20px}
+.wave{width:min(620px,100%);min-height:280px;display:flex;flex-direction:column;justify-content:center;gap:16px}
+.meter{height:92px;display:flex;align-items:end;justify-content:center;gap:8px;padding:10px 0}
+.bar{width:16px;border-radius:5px 5px 0 0;background:#2fb98f;min-height:14px;animation:pulse 1.15s ease-in-out infinite}
+.bar:nth-child(2){animation-delay:.12s;background:#3d84d7}.bar:nth-child(3){animation-delay:.24s}.bar:nth-child(4){animation-delay:.36s;background:#d4ad45}.bar:nth-child(5){animation-delay:.48s}
+.caption{background:rgba(0,0,0,.76);border:1px solid rgba(255,255,255,.12);border-radius:8px;padding:11px 13px;text-shadow:0 1px 1px #000;box-shadow:0 10px 28px rgba(0,0,0,.25);overflow-wrap:anywhere}
 .caption.swap{animation:swapCaption .32s ease-out}
-.ko-cap{font-size:22px;line-height:1.42;font-weight:800;color:#fff}
-.en-cap{font-size:15px;line-height:1.4;color:#d9e8ff}
+.ko-cap{font-size:24px;line-height:1.42;font-weight:800;color:#fff}
+.en-cap{font-size:16px;line-height:1.45;color:#d9e8ff}
 .hint{padding:10px 12px;color:#666f80;font-size:12px;line-height:1.55;border-top:1px solid #252536}
 .cards{display:flex;flex-direction:column;gap:10px}
-.card{padding:13px}.head{display:flex;align-items:center;justify-content:space-between;margin-bottom:9px}
+.card{padding:13px}.head{display:flex;align-items:center;justify-content:space-between;margin-bottom:9px;gap:10px}
 .label{font-size:12px;color:#8b93a3;font-weight:800}
-.pill{font-size:11px;color:#9fe1cb;background:#1a1a24;border:1px solid #2a2a38;border-radius:999px;padding:5px 9px}
+.pill{font-size:11px;color:#9fe1cb;background:#1a1a24;border:1px solid #2a2a38;border-radius:8px;padding:5px 9px;white-space:nowrap}
 .ko{font-size:17px;color:#f4f7fb;line-height:1.65;white-space:pre-wrap;overflow-wrap:anywhere}
 .en{font-size:13px;color:#8b93a3;line-height:1.6;margin-top:9px;padding-top:9px;border-top:1px solid #252536;white-space:pre-wrap;overflow-wrap:anywhere}
 .draft{border-left:3px solid #ba7517}.final{border-left:3px solid #1d9e75}
-.feed{display:flex;flex-direction:column;gap:8px;max-height:470px;overflow:auto}
+.feed{display:flex;flex-direction:column;gap:8px;max-height:430px;overflow:auto}
 .mini{font-size:12px;color:#646b78;line-height:1.6}
+@keyframes pulse{0%,100%{height:18px;opacity:.48}50%{height:88px;opacity:1}}
 @keyframes swapCaption{0%{opacity:.35;transform:translateY(5px)}100%{opacity:1;transform:translateY(0)}}
-@media(max-width:900px){.app{padding:12px}.grid{grid-template-columns:1fr}.controls{grid-template-columns:1fr 92px 62px}.ko-cap{font-size:18px}.en-cap{font-size:13px}.captions{left:10px;right:10px;bottom:10px}}
+@media(max-width:920px){.app{padding:12px}.grid{grid-template-columns:1fr}.controls{grid-template-columns:1fr 1fr}.url{grid-column:1/-1}.ko-cap{font-size:19px}.en-cap{font-size:14px}.stage{min-height:360px;padding:12px}}
 </style>
 </head>
 <body>
@@ -52,8 +55,8 @@ h1{font-size:20px}
     <div class="brand">
       <div class="logo">STT</div>
       <div>
-        <h1>YouTube Live 실시간 자막</h1>
-        <div class="sub">IR 웹캐스트 URL을 직접 가져와 영어/한국어 실시간 자막을 표시합니다.</div>
+        <h1>Live Earnings Audio Caption</h1>
+        <div class="sub">Admin audio in, customer audio plus English/Korean captions out.</div>
       </div>
     </div>
     <div class="live"><span class="dot"></span>LIVE</div>
@@ -62,70 +65,78 @@ h1{font-size:20px}
   <section class="grid">
     <div class="panel">
       <div class="controls">
-        <input class="url" id="streamUrl" type="url" placeholder="https://ir.tesla.com/webcast-2026-01-28">
-        <button class="btn start" id="startBtn">URL 시작</button>
-        <button class="btn stop" id="stopBtn">중지</button>
+        <input class="url" id="streamUrl" type="url" placeholder="Optional YouTube URL fallback">
+        <button class="btn audio" id="audioBtn">Enable Audio</button>
+        <button class="btn admin" id="adminBtn">Start Admin Broadcast</button>
+        <button class="btn stop" id="stopBtn">Stop</button>
       </div>
-      <div class="status" id="status">IR 웹캐스트 URL을 입력하고 URL 시작을 누르세요. 서버가 페이지 안의 실제 스트림을 찾아 STT/번역을 시작합니다.</div>
-      <div class="stage" id="stage">
-        <div class="placeholder">IR 웹캐스트 영상과 자막이 여기에 표시됩니다.</div>
-        <div class="captions">
-          <div class="caption ko-cap" id="captionKo">한국어 자막 대기 중</div>
+      <div class="status" id="status">Customers click Enable Audio. Admin starts the broadcast from the browser playing the earnings call.</div>
+      <div class="stage">
+        <div class="wave">
+          <div class="meter" aria-hidden="true">
+            <span class="bar"></span><span class="bar"></span><span class="bar"></span><span class="bar"></span><span class="bar"></span>
+          </div>
+          <div class="caption ko-cap" id="captionKo">Korean captions waiting</div>
           <div class="caption en-cap" id="captionEn">English captions waiting</div>
         </div>
       </div>
-      <div class="hint">Tesla IR 같은 웹캐스트 페이지는 iframe 또는 플레이어 안의 실제 미디어 링크를 자동 탐색합니다.</div>
+      <div class="hint">Admin mode captures the audio from the selected browser tab, window, or system audio. Customers do not share their microphone or screen.</div>
     </div>
 
     <aside class="cards">
       <div class="card draft">
-        <div class="head"><span class="label">LIVE DRAFT</span><span class="pill" id="modePill">수신 대기</span></div>
-        <div class="ko" id="partialKorean">URL 송출이 시작되면 한국어 초안이 표시됩니다.</div>
+        <div class="head"><span class="label">LIVE DRAFT</span><span class="pill" id="modePill">Waiting</span></div>
+        <div class="ko" id="partialKorean">Korean draft appears every second as speech is detected.</div>
         <div class="en" id="partialEnglish">English draft appears here.</div>
       </div>
       <div class="card final">
-        <div class="head"><span class="label">CONFIRMED</span><span class="pill">확정</span></div>
-        <div class="ko" id="liveKorean">문장이 완성되면 확정 번역으로 바뀝니다.</div>
+        <div class="head"><span class="label">CONFIRMED</span><span class="pill">Final</span></div>
+        <div class="ko" id="liveKorean">Final Korean sentence appears here.</div>
         <div class="en" id="liveEnglish">Final English sentence appears here.</div>
       </div>
       <div class="card">
-        <div class="head"><span class="label">SEGMENTS</span><span class="pill">기록</span></div>
-        <div class="feed" id="feed"><div class="mini">아직 확정된 문장이 없습니다.</div></div>
+        <div class="head"><span class="label">SEGMENTS</span><span class="pill">Log</span></div>
+        <div class="feed" id="feed"><div class="mini">No confirmed segments yet.</div></div>
       </div>
     </aside>
   </section>
 </main>
 
-<script src="https://cdn.jsdelivr.net/npm/hls.js@1.5.20/dist/hls.min.js"></script>
 <script>
 const $ = id => document.getElementById(id);
 const streamUrlInput = $("streamUrl");
 const statusEl = $("status");
-const stage = $("stage");
 const feed = $("feed");
 const modePill = $("modePill");
 const partialEnglish = $("partialEnglish");
 const partialKorean = $("partialKorean");
 const liveEnglish = $("liveEnglish");
 const liveKorean = $("liveKorean");
-let ws = null;
+const audioBtn = $("audioBtn");
+const adminBtn = $("adminBtn");
+const stopBtn = $("stopBtn");
+
 let viewerWs = null;
-let hls = null;
+let adminWs = null;
+let urlWs = null;
+let playbackContext = null;
+let playbackTime = 0;
+let captureStream = null;
+let captureContext = null;
+let captureProcessor = null;
+let captureSource = null;
 const segments = new Map();
 
 function esc(value) {
   return String(value || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 }
-
 function socketUrl(path) {
   return `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}${path}`;
 }
-
 function setStatus(text, level = "info") {
   statusEl.textContent = text;
   statusEl.className = `status ${level === "error" ? "error" : level === "success" ? "success" : ""}`;
 }
-
 function flash(id) {
   const el = $(id);
   if (!el) return;
@@ -133,7 +144,6 @@ function flash(id) {
   void el.offsetWidth;
   el.classList.add("swap");
 }
-
 function setCaptions(en, ko, animateKo = false) {
   if (en !== undefined) $("captionEn").textContent = en || " ";
   if (ko !== undefined) {
@@ -141,68 +151,22 @@ function setCaptions(en, ko, animateKo = false) {
     if (animateKo) flash("captionKo");
   }
 }
-
-function captionHtml() {
-  return `<div class="captions"><div class="caption ko-cap" id="captionKo">한국어 자막 대기 중</div><div class="caption en-cap" id="captionEn">English captions waiting</div></div>`;
-}
-
-function youtubeId(url) {
-  try {
-    const parsed = new URL(url);
-    if (parsed.hostname.includes("youtu.be")) return parsed.pathname.slice(1);
-    if (parsed.hostname.includes("youtube.com")) return parsed.searchParams.get("v") || "";
-  } catch {}
-  return "";
-}
-
-function isDirectMedia(url) {
-  return /\.(m3u8|mp4|webm|mov|mp3|m4a|wav|aac)(\?|#|$)/i.test(url);
-}
-
-function renderPlayer(url) {
-  if (hls) {
-    hls.destroy();
-    hls = null;
-  }
-  const yt = youtubeId(url);
-  if (yt) {
-    stage.innerHTML = `<iframe src="https://www.youtube.com/embed/${encodeURIComponent(yt)}?autoplay=1&rel=0" allow="autoplay; encrypted-media; picture-in-picture" allowfullscreen></iframe>${captionHtml()}`;
-    return;
-  }
-  if (isDirectMedia(url)) {
-    stage.innerHTML = `<video id="player" controls playsinline crossorigin="anonymous"></video>${captionHtml()}`;
-    const video = $("player");
-    if (/\.m3u8(\?|#|$)/i.test(url) && window.Hls && Hls.isSupported()) {
-      hls = new Hls({lowLatencyMode: true});
-      hls.loadSource(url);
-      hls.attachMedia(video);
-    } else {
-      video.src = url;
-    }
-    video.play().catch(() => {});
-    return;
-  }
-  stage.innerHTML = `<div class="placeholder">미리보기는 어렵지만 서버 STT는 시도합니다.</div>${captionHtml()}`;
-}
-
 function resetUi() {
   segments.clear();
   partialEnglish.textContent = "English draft appears here.";
-  partialKorean.textContent = "URL 송출이 시작되면 한국어 초안이 표시됩니다.";
+  partialKorean.textContent = "Korean draft appears every second as speech is detected.";
   liveEnglish.textContent = "Final English sentence appears here.";
-  liveKorean.textContent = "문장이 완성되면 확정 번역으로 바뀝니다.";
-  feed.innerHTML = '<div class="mini">아직 확정된 문장이 없습니다.</div>';
-  modePill.textContent = "수신 대기";
-  setCaptions("English captions waiting", "한국어 자막 대기 중");
+  liveKorean.textContent = "Final Korean sentence appears here.";
+  feed.innerHTML = '<div class="mini">No confirmed segments yet.</div>';
+  modePill.textContent = "Waiting";
+  setCaptions("English captions waiting", "Korean captions waiting");
 }
-
 function renderFeed() {
   const items = [...segments.values()].filter(item => !item.partial).sort((a, b) => b.seq - a.seq).slice(0, 10);
   feed.innerHTML = items.length
-    ? items.map(item => `<div class="card final"><div class="head"><span class="label">${esc(item.id)}</span><span class="pill">${item.transMs ? item.transMs + "ms" : "번역 중"}</span></div><div class="ko">${esc(item.ko || "번역 중입니다.")}</div><div class="en">${esc(item.en || "영어 문장 대기 중입니다.")}</div></div>`).join("")
-    : '<div class="mini">아직 확정된 문장이 없습니다.</div>';
+    ? items.map(item => `<div class="card final"><div class="head"><span class="label">${esc(item.id)}</span><span class="pill">${item.transMs ? item.transMs + "ms" : "Translating"}</span></div><div class="ko">${esc(item.ko || "Translating...")}</div><div class="en">${esc(item.en || "Waiting for English...")}</div></div>`).join("")
+    : '<div class="mini">No confirmed segments yet.</div>';
 }
-
 function handlePayload(payload) {
   if (payload.type === "reset") {
     resetUi();
@@ -213,23 +177,23 @@ function handlePayload(payload) {
   } else if (payload.type === "partial") {
     partialEnglish.textContent = payload.text || "";
     setCaptions(payload.text || "", undefined);
-    modePill.textContent = "실시간";
+    modePill.textContent = "Live EN";
   } else if (payload.type === "partial_ko") {
     partialKorean.textContent = payload.text || "";
     setCaptions(undefined, payload.text || "");
-    modePill.textContent = payload.trans_ms ? `번역 ${payload.trans_ms}ms` : "실시간 번역";
+    modePill.textContent = payload.trans_ms ? `KO ${payload.trans_ms}ms` : "Live KO";
   } else if (payload.type === "partial_translation_error") {
-    modePill.textContent = "번역 오류";
-    partialKorean.textContent = "번역 오류: " + (payload.message || "알 수 없는 오류");
+    modePill.textContent = "KO error";
+    partialKorean.textContent = "Translation error: " + (payload.message || "unknown");
     setStatus(partialKorean.textContent, "error");
   } else if (payload.type === "translation_start") {
-    modePill.textContent = "번역 중";
+    modePill.textContent = "Translating";
   } else if (payload.type === "translation_error") {
     const item = segments.get(payload.segment_id) || {id: payload.segment_id, seq: payload.seq, en: "", ko: "", transMs: 0};
-    item.ko = "번역 오류: " + (payload.message || "알 수 없는 오류");
+    item.ko = "Translation error: " + (payload.message || "unknown");
     liveKorean.textContent = item.ko;
     setCaptions(undefined, item.ko);
-    modePill.textContent = "오류";
+    modePill.textContent = "Error";
     setStatus(item.ko, "error");
     segments.set(payload.segment_id, item);
     renderFeed();
@@ -239,81 +203,178 @@ function handlePayload(payload) {
       item.en = payload.text || "";
       liveEnglish.textContent = item.en;
       setCaptions(item.en, undefined);
-      partialEnglish.textContent = "다음 문장을 듣고 있습니다.";
+      partialEnglish.textContent = "Listening for the next sentence.";
     }
     if (payload.phase === "final_ko") {
       item.ko = payload.text || "";
       item.transMs = payload.trans_ms || 0;
       liveKorean.textContent = item.ko;
       setCaptions(undefined, item.ko, true);
-      partialKorean.textContent = "다음 문장을 번역하고 있습니다.";
-      modePill.textContent = "확정";
-      setStatus("확정 문장을 갱신했습니다.", "success");
+      partialKorean.textContent = "Translating the next sentence.";
+      modePill.textContent = "Final";
+      setStatus("Final sentence updated.", "success");
     }
     segments.set(payload.segment_id, item);
     renderFeed();
   }
 }
-
 function connectViewer() {
   if (viewerWs && (viewerWs.readyState === WebSocket.OPEN || viewerWs.readyState === WebSocket.CONNECTING)) return;
   viewerWs = new WebSocket(socketUrl("/ws/viewer"));
-  viewerWs.onmessage = event => handlePayload(JSON.parse(event.data));
-  viewerWs.onopen = () => setStatus("자막 방송 수신 대기 중입니다.");
-  viewerWs.onclose = () => setStatus("자막 방송 연결이 종료되었습니다.");
-  viewerWs.onerror = () => setStatus("자막 방송 연결 오류가 발생했습니다.", "error");
+  viewerWs.binaryType = "arraybuffer";
+  viewerWs.onmessage = async event => {
+    if (typeof event.data === "string") {
+      handlePayload(JSON.parse(event.data));
+      return;
+    }
+    const buffer = event.data instanceof Blob ? await event.data.arrayBuffer() : event.data;
+    playPcm(buffer);
+  };
+  viewerWs.onopen = () => setStatus("Caption and audio broadcast connected.");
+  viewerWs.onclose = () => setStatus("Broadcast disconnected.");
+  viewerWs.onerror = () => setStatus("Broadcast connection error.", "error");
 }
-
-function connectUrlMode() {
-  if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) return ws;
-  ws = new WebSocket(socketUrl("/ws/ui"));
-  ws.onopen = () => setStatus("관리자 URL 송출을 시작합니다.");
-  ws.onmessage = event => handlePayload(JSON.parse(event.data));
-  ws.onclose = () => setStatus("관리자 URL 송출 연결이 종료되었습니다.");
-  ws.onerror = () => setStatus("관리자 URL 송출 연결 오류가 발생했습니다.", "error");
-  return ws;
+async function enableAudio() {
+  playbackContext = playbackContext || new AudioContext({sampleRate: 16000});
+  await playbackContext.resume();
+  playbackTime = Math.max(playbackContext.currentTime + 0.12, playbackTime);
+  audioBtn.textContent = "Audio Enabled";
+  setStatus("Audio playback enabled.", "success");
 }
-
-function startUrlMode() {
-  const url = streamUrlInput.value.trim();
-  if (!url) {
-    setStatus("먼저 YouTube Live URL을 입력하세요.", "error");
+function playPcm(arrayBuffer) {
+  if (!playbackContext || playbackContext.state !== "running") return;
+  if (!arrayBuffer || arrayBuffer.byteLength < 2) return;
+  const samples = new Int16Array(arrayBuffer);
+  const audioBuffer = playbackContext.createBuffer(1, samples.length, 16000);
+  const channel = audioBuffer.getChannelData(0);
+  for (let i = 0; i < samples.length; i += 1) channel[i] = Math.max(-1, Math.min(1, samples[i] / 32768));
+  const source = playbackContext.createBufferSource();
+  source.buffer = audioBuffer;
+  source.connect(playbackContext.destination);
+  playbackTime = Math.max(playbackContext.currentTime + 0.08, playbackTime);
+  source.start(playbackTime);
+  playbackTime += audioBuffer.duration;
+}
+function downsampleTo16k(input, sourceRate) {
+  if (sourceRate === 16000) return floatTo16BitPcm(input);
+  const ratio = sourceRate / 16000;
+  const length = Math.max(1, Math.round(input.length / ratio));
+  const output = new Float32Array(length);
+  let pos = 0;
+  for (let i = 0; i < length; i += 1) {
+    const next = Math.round((i + 1) * ratio);
+    let sum = 0;
+    let count = 0;
+    for (; pos < next && pos < input.length; pos += 1) {
+      sum += input[pos];
+      count += 1;
+    }
+    output[i] = count ? sum / count : 0;
+  }
+  return floatTo16BitPcm(output);
+}
+function floatTo16BitPcm(float32) {
+  const buffer = new ArrayBuffer(float32.length * 2);
+  const view = new DataView(buffer);
+  for (let i = 0; i < float32.length; i += 1) {
+    const sample = Math.max(-1, Math.min(1, float32[i]));
+    view.setInt16(i * 2, sample < 0 ? sample * 0x8000 : sample * 0x7fff, true);
+  }
+  return buffer;
+}
+async function startAdminBroadcast() {
+  stopAdminBroadcast(false);
+  setStatus("Choose the tab, window, or screen playing the call. Turn on Share audio/System audio.", "info");
+  captureStream = await navigator.mediaDevices.getDisplayMedia({
+    video: true,
+    audio: {echoCancellation: false, noiseSuppression: false, autoGainControl: false}
+  });
+  if (!captureStream.getAudioTracks().length) {
+    stopAdminBroadcast(false);
+    setStatus("No shared audio was found. Start again and enable Share audio/System audio.", "error");
     return;
   }
-  renderPlayer(url);
+  adminWs = new WebSocket(socketUrl("/ws/admin-audio"));
+  adminWs.binaryType = "arraybuffer";
+  adminWs.onmessage = event => {
+    if (typeof event.data === "string") handlePayload(JSON.parse(event.data));
+  };
+  adminWs.onerror = () => setStatus("Admin broadcast connection error.", "error");
+  adminWs.onclose = () => {
+    adminBtn.disabled = false;
+    adminBtn.textContent = "Start Admin Broadcast";
+  };
+  adminWs.onopen = async () => {
+    captureContext = new AudioContext();
+    captureSource = captureContext.createMediaStreamSource(captureStream);
+    captureProcessor = captureContext.createScriptProcessor(2048, 1, 1);
+    captureProcessor.onaudioprocess = event => {
+      if (!adminWs || adminWs.readyState !== WebSocket.OPEN) return;
+      const pcm = downsampleTo16k(event.inputBuffer.getChannelData(0), captureContext.sampleRate);
+      adminWs.send(pcm);
+    };
+    captureSource.connect(captureProcessor);
+    captureProcessor.connect(captureContext.destination);
+    adminBtn.disabled = true;
+    adminBtn.textContent = "Broadcasting";
+    setStatus("Admin audio broadcast started.", "success");
+  };
+  captureStream.getVideoTracks().forEach(track => {
+    track.onended = () => stopAdminBroadcast(true);
+  });
+}
+function stopAdminBroadcast(sendStop = true) {
+  if (sendStop && adminWs && adminWs.readyState === WebSocket.OPEN) {
+    adminWs.send(JSON.stringify({type: "stop"}));
+  }
+  if (adminWs) adminWs.close();
+  adminWs = null;
+  if (captureProcessor) captureProcessor.disconnect();
+  if (captureSource) captureSource.disconnect();
+  if (captureContext) captureContext.close();
+  captureProcessor = null;
+  captureSource = null;
+  captureContext = null;
+  if (captureStream) captureStream.getTracks().forEach(track => track.stop());
+  captureStream = null;
+  adminBtn.disabled = false;
+  adminBtn.textContent = "Start Admin Broadcast";
+}
+function connectUrlMode() {
+  if (urlWs && (urlWs.readyState === WebSocket.OPEN || urlWs.readyState === WebSocket.CONNECTING)) return urlWs;
+  urlWs = new WebSocket(socketUrl("/ws/ui"));
+  urlWs.onopen = () => setStatus("Optional URL fallback connected.");
+  urlWs.onmessage = event => handlePayload(JSON.parse(event.data));
+  urlWs.onclose = () => setStatus("Optional URL fallback closed.");
+  urlWs.onerror = () => setStatus("Optional URL fallback error.", "error");
+  return urlWs;
+}
+function startUrlFallback() {
+  const url = streamUrlInput.value.trim();
+  if (!url) return;
   const socket = connectUrlMode();
   const send = () => socket.send(JSON.stringify({type: "start", url}));
   if (socket.readyState === WebSocket.OPEN) send();
   else socket.addEventListener("open", send, {once: true});
 }
-
-function stopUrlMode() {
-  if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({type: "stop"}));
-  ws = null;
+function stopAll() {
+  stopAdminBroadcast(true);
+  if (urlWs && urlWs.readyState === WebSocket.OPEN) urlWs.send(JSON.stringify({type: "stop"}));
+  setStatus("Stopped.");
 }
-
-$("startBtn").onclick = startUrlMode;
-$("stopBtn").onclick = () => {
-  stopUrlMode();
-  const video = $("player");
-  if (video) video.pause();
-  setStatus("중지했습니다.");
-};
-
-async function loadConfig() {
+audioBtn.onclick = enableAudio;
+adminBtn.onclick = () => startAdminBroadcast().catch(error => setStatus(error.message || String(error), "error"));
+streamUrlInput.addEventListener("change", startUrlFallback);
+stopBtn.onclick = stopAll;
+window.onload = async () => {
   connectViewer();
   try {
     const response = await fetch("/config");
     const config = await response.json();
-    if (config.default_stream_url) {
-      streamUrlInput.value = config.default_stream_url;
-      renderPlayer(config.default_stream_url);
-    }
-    if (config.auto_start_stream && config.default_stream_url) startUrlMode();
+    if (config.default_stream_url) streamUrlInput.value = config.default_stream_url;
+    if (config.auto_start_stream && config.default_stream_url) startUrlFallback();
   } catch {}
-}
-
-window.onload = loadConfig;
+};
 </script>
 </body>
 </html>

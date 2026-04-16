@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import time
 from collections import deque
 from collections.abc import AsyncGenerator
@@ -16,10 +17,10 @@ from .settings import settings
 from .translation import Translator
 
 
-class CaptionHub:
+class BroadcastHub:
     def __init__(self) -> None:
         self.clients: set[WebSocket] = set()
-        self.history: deque[dict] = deque(maxlen=60)
+        self.history: deque[dict] = deque(maxlen=80)
         self.lock = asyncio.Lock()
 
     async def subscribe(self, ws: WebSocket) -> None:
@@ -27,7 +28,7 @@ class CaptionHub:
             self.clients.add(ws)
             history = list(self.history)
         await ws.send_json({"type": "reset"})
-        await ws.send_json({"type": "status", "level": "info", "message": "실시간 자막 방송을 수신 중입니다."})
+        await ws.send_json({"type": "status", "level": "info", "message": "Broadcast connected."})
         for payload in history:
             await ws.send_json(payload)
 
@@ -35,34 +36,30 @@ class CaptionHub:
         async with self.lock:
             self.clients.discard(ws)
 
-    async def broadcast(self, payload: dict) -> None:
-        if payload.get("type") not in {
-            "reset",
-            "status",
-            "error",
-            "partial",
-            "partial_ko",
-            "partial_translation_error",
-            "translation_start",
-            "translation_error",
-            "segment",
-        }:
-            return
+    async def broadcast_json(self, payload: dict) -> None:
         if payload.get("type") == "reset":
             self.history.clear()
         elif payload.get("type") != "status":
             self.history.append(payload)
-
         async with self.lock:
             clients = list(self.clients)
+        await self._send_to_clients(clients, payload, binary=False)
 
+    async def broadcast_audio(self, chunk: bytes) -> None:
+        async with self.lock:
+            clients = list(self.clients)
+        await self._send_to_clients(clients, chunk, binary=True)
+
+    async def _send_to_clients(self, clients: list[WebSocket], payload, *, binary: bool) -> None:
         dead: list[WebSocket] = []
         for client in clients:
             try:
-                await client.send_json(payload)
+                if binary:
+                    await client.send_bytes(payload)
+                else:
+                    await client.send_json(payload)
             except Exception:
                 dead.append(client)
-
         if dead:
             async with self.lock:
                 for client in dead:
@@ -71,7 +68,7 @@ class CaptionHub:
 
 app = FastAPI(title="shinhan-live-stt")
 translator: Translator | None = None
-caption_hub = CaptionHub()
+broadcast_hub = BroadcastHub()
 STATIC_DIR = Path(__file__).resolve().parent.parent / "static"
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
@@ -100,13 +97,10 @@ async def health() -> dict[str, str | int]:
         "stt": "assemblyai",
         "translation": "openai",
         "model": settings.openai_model,
-        "viewer_clients": len(caption_hub.clients),
+        "viewer_clients": len(broadcast_hub.clients),
         "youtube_cookies": "configured" if _youtube_cookies_configured() else "missing",
         "youtube_proxy": "configured" if settings.ytdlp_proxy_url else "missing",
-        "youtube_impersonate": settings.ytdlp_impersonate or "disabled",
         "youtube_player_clients": settings.ytdlp_player_clients,
-        "youtube_visitor_data": "configured" if settings.ytdlp_visitor_data else "missing",
-        "youtube_po_token": "configured" if settings.ytdlp_po_token else "missing",
     }
 
 
@@ -122,14 +116,69 @@ async def config() -> dict[str, str | bool]:
 @app.websocket("/ws/viewer")
 async def viewer_ws(ws: WebSocket) -> None:
     await ws.accept()
-    await caption_hub.subscribe(ws)
+    await broadcast_hub.subscribe(ws)
     try:
         while True:
             await ws.receive_text()
     except WebSocketDisconnect:
         pass
     finally:
-        await caption_hub.unsubscribe(ws)
+        await broadcast_hub.unsubscribe(ws)
+
+
+@app.websocket("/ws/admin-audio")
+async def admin_audio_ws(ws: WebSocket) -> None:
+    await ws.accept()
+    queue: asyncio.Queue[bytes | None] = asyncio.Queue(maxsize=120)
+    stt = AssemblyAIStreamingClient()
+
+    async def audio() -> AsyncGenerator[bytes, None]:
+        while True:
+            chunk = await queue.get()
+            if chunk is None:
+                break
+            yield chunk
+
+    session_task = asyncio.create_task(
+        run_stt_translation_session(
+            ws,
+            stt.stream(audio()),
+            starting_message="Admin audio broadcast connected.",
+            broadcast=True,
+        )
+    )
+    await broadcast_hub.broadcast_json({"type": "reset"})
+    await broadcast_hub.broadcast_json({"type": "status", "level": "success", "message": "Admin audio broadcast started."})
+
+    try:
+        while True:
+            message = await ws.receive()
+            if message.get("bytes") is not None:
+                chunk = message["bytes"]
+                if queue.full():
+                    try:
+                        queue.get_nowait()
+                    except asyncio.QueueEmpty:
+                        pass
+                await queue.put(chunk)
+                await broadcast_hub.broadcast_audio(chunk)
+            elif message.get("text"):
+                try:
+                    payload = json.loads(message["text"])
+                except json.JSONDecodeError:
+                    continue
+                if payload.get("type") == "stop":
+                    break
+            elif message.get("type") == "websocket.disconnect":
+                break
+    except WebSocketDisconnect:
+        pass
+    finally:
+        await queue.put(None)
+        if not session_task.done():
+            session_task.cancel()
+        await asyncio.gather(session_task, return_exceptions=True)
+        await broadcast_hub.broadcast_json({"type": "status", "level": "info", "message": "Admin audio broadcast ended."})
 
 
 @app.websocket("/ws/ui")
@@ -148,8 +197,7 @@ async def ui_ws(ws: WebSocket) -> None:
                 if session_task and not session_task.done():
                     session_task.cancel()
                     await asyncio.gather(session_task, return_exceptions=True)
-                await ws.send_json({"type": "status", "level": "info", "message": "세션을 중지했습니다."})
-                await caption_hub.broadcast({"type": "status", "level": "info", "message": "관리자 URL 송출을 중지했습니다."})
+                await ws.send_json({"type": "status", "level": "info", "message": "URL session stopped."})
     except WebSocketDisconnect:
         pass
     finally:
@@ -164,19 +212,15 @@ async def run_url_session(ws: WebSocket, url: str, *, broadcast: bool = False) -
 
     async def audio() -> AsyncGenerator[bytes, None]:
         async for chunk in source.stream_pcm():
+            if broadcast:
+                await broadcast_hub.broadcast_audio(chunk)
             yield chunk
 
     try:
         await run_stt_translation_session(
             ws,
             stt.stream(audio()),
-            starting_message=(
-                "YouTube 오디오를 준비하고 있습니다. "
-                f"cookies={_yes_no(_youtube_cookies_configured())}, "
-                f"proxy={_yes_no(bool(settings.ytdlp_proxy_url))}, "
-                f"impersonate={settings.ytdlp_impersonate or 'off'}, "
-                f"clients={settings.ytdlp_player_clients}"
-            ),
+            starting_message="YouTube URL audio connected.",
             broadcast=broadcast,
         )
     finally:
@@ -191,7 +235,6 @@ async def run_stt_translation_session(ws: WebSocket, events, starting_message: s
     segment_ids: dict[int, str] = {}
     finalized_turns: set[int] = set()
     segment_seq = 0
-
     latest_partial: dict[str, object] = {"text": "", "turn_order": -1, "version": 0}
     partial_event = asyncio.Event()
     partial_tasks: set[asyncio.Task] = set()
@@ -200,7 +243,7 @@ async def run_stt_translation_session(ws: WebSocket, events, starting_message: s
         async with send_lock:
             await ws.send_json(payload)
         if broadcast:
-            await caption_hub.broadcast(payload)
+            await broadcast_hub.broadcast_json(payload)
 
     def segment_for(event: SttEvent) -> tuple[str, int]:
         nonlocal segment_seq
@@ -219,20 +262,18 @@ async def run_stt_translation_session(ws: WebSocket, events, starting_message: s
         except Exception as exc:
             await send({"type": "partial_translation_error", "message": _format_exception(exc)})
             return
-
-        if not korean:
-            return
-        await send(
-            {
-                "type": "partial_ko",
-                "text": korean,
-                "source_text": text,
-                "turn_order": turn_order,
-                "version": version,
-                "trans_ms": trans_ms,
-                "total_ms": round((time.time() - started) * 1000),
-            }
-        )
+        if korean:
+            await send(
+                {
+                    "type": "partial_ko",
+                    "text": korean,
+                    "source_text": text,
+                    "turn_order": turn_order,
+                    "version": version,
+                    "trans_ms": trans_ms,
+                    "total_ms": round((time.time() - started) * 1000),
+                }
+            )
 
     async def partial_translation_worker() -> None:
         last_started_text = ""
@@ -243,12 +284,10 @@ async def run_stt_translation_session(ws: WebSocket, events, starting_message: s
                 partial_event.clear()
             except TimeoutError:
                 pass
-
             text = str(latest_partial["text"]).strip()
             turn_order = int(latest_partial["turn_order"])
             version = int(latest_partial["version"])
             now = time.monotonic()
-
             if not _should_partial_translate(text):
                 continue
             if text == last_started_text:
@@ -257,7 +296,6 @@ async def run_stt_translation_session(ws: WebSocket, events, starting_message: s
                 continue
             if len(partial_tasks) >= settings.partial_translation_concurrency:
                 continue
-
             last_started_text = text
             last_started_at = now
             task = asyncio.create_task(translate_partial_snapshot(text, turn_order, version))
@@ -271,25 +309,15 @@ async def run_stt_translation_session(ws: WebSocket, events, starting_message: s
         if not text or event.turn_order in finalized_turns:
             return
         finalized_turns.add(event.turn_order)
-
         segment_id, seq = segment_for(event)
         started = time.time()
         await send({"type": "segment", "segment_id": segment_id, "seq": seq, "phase": "final_en", "text": text})
         await send({"type": "translation_start", "segment_id": segment_id, "seq": seq})
-
         try:
             korean, trans_ms = await translator.translate(text, list(context), partial=False)
         except Exception as exc:
-            await send(
-                {
-                    "type": "translation_error",
-                    "segment_id": segment_id,
-                    "seq": seq,
-                    "message": _format_exception(exc),
-                }
-            )
+            await send({"type": "translation_error", "segment_id": segment_id, "seq": seq, "message": _format_exception(exc)})
             return
-
         if korean:
             context.append(text)
             await send(
@@ -321,25 +349,21 @@ async def run_stt_translation_session(ws: WebSocket, events, starting_message: s
     partial_worker = asyncio.create_task(partial_translation_worker())
     await send({"type": "reset"})
     await send({"type": "status", "level": "info", "message": starting_message})
-
     try:
         async for event in events:
             if event.type == "status":
-                await send({"type": "status", "level": "info", "message": "AssemblyAI STT에 연결했습니다."})
+                await send({"type": "status", "level": "info", "message": "AssemblyAI STT connected."})
                 continue
             if event.type != "turn" or not event.text:
                 continue
-
             text = event.text.strip()
             await send({"type": "partial", "text": text, "turn_order": event.turn_order})
             schedule_partial_translation(text, event.turn_order)
-
             if event.end_of_turn:
                 schedule_finalize(event, 0.0)
-
         if pending_finalize:
             await asyncio.gather(*pending_finalize.values(), return_exceptions=True)
-        await send({"type": "status", "level": "success", "message": "스트림이 종료되었습니다."})
+        await send({"type": "status", "level": "success", "message": "Stream ended."})
     except asyncio.CancelledError:
         raise
     except Exception as exc:
@@ -359,10 +383,6 @@ def _youtube_cookies_configured() -> bool:
     return bool(settings.ytdlp_cookies_b64 or settings.ytdlp_cookies or settings.ytdlp_cookies_file)
 
 
-def _yes_no(value: bool) -> str:
-    return "on" if value else "off"
-
-
 def _format_exception(exc: BaseException) -> str:
     message = str(exc).strip()
     if message:
@@ -373,12 +393,8 @@ def _format_exception(exc: BaseException) -> str:
 def _user_facing_error(exc: BaseException) -> str:
     detail = _format_exception(exc)
     if "Sign in to confirm" in detail or "not a bot" in detail:
-        return (
-            "YouTube가 Railway 서버를 봇으로 판정했습니다. "
-            "관리자 오디오 송출 모드를 사용하거나, 운영용 쿠키/프록시를 설정하세요. "
-            f"상세: {detail}"
-        )
-    return f"처리 중 오류가 발생했습니다. 상세: {detail}"
+        return f"YouTube blocked the server. Use admin audio broadcast or configure cookies/proxy. Detail: {detail}"
+    return f"Processing error: {detail}"
 
 
 def _should_partial_translate(text: str) -> bool:
