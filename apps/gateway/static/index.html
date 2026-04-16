@@ -307,7 +307,7 @@ async function startAdminBroadcast() {
   adminWs.onopen = async () => {
     captureContext = new AudioContext();
     captureSource = captureContext.createMediaStreamSource(captureStream);
-    captureProcessor = captureContext.createScriptProcessor(2048, 1, 1);
+    captureProcessor = captureContext.createScriptProcessor(4096, 1, 1);
     captureProcessor.onaudioprocess = event => {
       if (!adminWs || adminWs.readyState !== WebSocket.OPEN) return;
       const pcm = downsampleTo16k(event.inputBuffer.getChannelData(0), captureContext.sampleRate);

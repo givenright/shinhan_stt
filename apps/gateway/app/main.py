@@ -131,6 +131,10 @@ async def admin_audio_ws(ws: WebSocket) -> None:
     await ws.accept()
     queue: asyncio.Queue[bytes | None] = asyncio.Queue(maxsize=120)
     stt = AssemblyAIStreamingClient()
+    bytes_per_second = settings.assemblyai_sample_rate * 2
+    stt_chunk_bytes = int(bytes_per_second * 0.1)
+    min_stt_chunk_bytes = int(bytes_per_second * 0.05)
+    stt_buffer = bytearray()
 
     async def audio() -> AsyncGenerator[bytes, None]:
         while True:
@@ -155,13 +159,17 @@ async def admin_audio_ws(ws: WebSocket) -> None:
             message = await ws.receive()
             if message.get("bytes") is not None:
                 chunk = message["bytes"]
-                if queue.full():
-                    try:
-                        queue.get_nowait()
-                    except asyncio.QueueEmpty:
-                        pass
-                await queue.put(chunk)
                 await broadcast_hub.broadcast_audio(chunk)
+                stt_buffer.extend(chunk)
+                while len(stt_buffer) >= stt_chunk_bytes:
+                    stt_chunk = bytes(stt_buffer[:stt_chunk_bytes])
+                    del stt_buffer[:stt_chunk_bytes]
+                    if queue.full():
+                        try:
+                            queue.get_nowait()
+                        except asyncio.QueueEmpty:
+                            pass
+                    await queue.put(stt_chunk)
             elif message.get("text"):
                 try:
                     payload = json.loads(message["text"])
@@ -174,6 +182,8 @@ async def admin_audio_ws(ws: WebSocket) -> None:
     except WebSocketDisconnect:
         pass
     finally:
+        if len(stt_buffer) >= min_stt_chunk_bytes:
+            await queue.put(bytes(stt_buffer))
         await queue.put(None)
         if not session_task.done():
             session_task.cancel()
