@@ -124,6 +124,16 @@ class URLAudioSource:
             "1",
             "-reconnect_delay_max",
             "5",
+            "-fflags",
+            "nobuffer",
+            "-flags",
+            "low_delay",
+            "-flush_packets",
+            "1",
+            "-probesize",
+            "32768",
+            "-analyzeduration",
+            "0",
         ]
         user_agent = self._resolved_headers.get("User-Agent")
         if user_agent:
@@ -148,6 +158,8 @@ class URLAudioSource:
                 "error",
                 *self._ffmpeg_input_args(media_url),
                 "-vn",
+                "-af",
+                "aresample=async=1:first_pts=0",
                 "-f",
                 "s16le",
                 "-ar",

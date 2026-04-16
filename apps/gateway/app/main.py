@@ -114,11 +114,12 @@ async def run_stt_translation_session(ws: WebSocket, events, starting_message: s
     send_lock = asyncio.Lock()
     context: deque[str] = deque(maxlen=settings.translation_context_size)
     pending_finalize: dict[int, asyncio.Task] = {}
-    pending_partial_translation: asyncio.Task | None = None
     segment_ids: dict[int, str] = {}
     finalized_turns: set[int] = set()
     segment_seq = 0
-    partial_version = 0
+
+    latest_partial: dict[str, object] = {"text": "", "turn_order": -1, "version": 0}
+    partial_event = asyncio.Event()
 
     async def send(payload: dict) -> None:
         async with send_lock:
@@ -132,6 +133,44 @@ async def run_stt_translation_session(ws: WebSocket, events, starting_message: s
             segment_ids[event.turn_order] = segment_id
             segment_seq += 1
         return segment_id, int(segment_id.split("_")[-1])
+
+    async def partial_translation_worker() -> None:
+        last_translated_text = ""
+        while True:
+            await partial_event.wait()
+            partial_event.clear()
+            if settings.partial_translation_delay > 0:
+                await asyncio.sleep(settings.partial_translation_delay)
+
+            text = str(latest_partial["text"]).strip()
+            turn_order = int(latest_partial["turn_order"])
+            version = int(latest_partial["version"])
+            if not _should_partial_translate(text) or turn_order in finalized_turns or text == last_translated_text:
+                continue
+
+            started = time.time()
+            try:
+                korean, trans_ms = await translator.translate(text, list(context), partial=True)
+            except Exception as exc:
+                await send({"type": "partial_translation_error", "message": _format_exception(exc)})
+                await asyncio.sleep(settings.partial_translation_interval)
+                continue
+
+            if korean and version <= int(latest_partial["version"]) and turn_order not in finalized_turns:
+                last_translated_text = text
+                await send(
+                    {
+                        "type": "partial_ko",
+                        "text": korean,
+                        "turn_order": turn_order,
+                        "trans_ms": trans_ms,
+                        "total_ms": round((time.time() - started) * 1000),
+                    }
+                )
+
+            await asyncio.sleep(settings.partial_translation_interval)
+            if str(latest_partial["text"]).strip() != last_translated_text:
+                partial_event.set()
 
     async def finalize_turn(event: SttEvent, delay: float = 0.0) -> None:
         if delay:
@@ -173,26 +212,13 @@ async def run_stt_translation_session(ws: WebSocket, events, starting_message: s
                 }
             )
 
-    async def translate_partial(text: str, turn_order: int, version: int) -> None:
-        await asyncio.sleep(settings.partial_translation_delay)
-        if version != partial_version or turn_order in finalized_turns or not _should_partial_translate(text):
-            return
-        try:
-            korean, trans_ms = await translator.translate(text, list(context), partial=True)
-        except Exception as exc:
-            await send({"type": "translation_error", "segment_id": f"turn_{turn_order}", "seq": turn_order, "message": _format_exception(exc)})
-            return
-        if korean and version == partial_version and turn_order not in finalized_turns:
-            await send({"type": "partial_ko", "text": korean, "turn_order": turn_order, "trans_ms": trans_ms})
-
     def schedule_partial_translation(text: str, turn_order: int) -> None:
-        nonlocal pending_partial_translation, partial_version
-        partial_version += 1
-        if pending_partial_translation and not pending_partial_translation.done():
-            pending_partial_translation.cancel()
         if not _should_partial_translate(text):
             return
-        pending_partial_translation = asyncio.create_task(translate_partial(text, turn_order, partial_version))
+        latest_partial["text"] = text
+        latest_partial["turn_order"] = turn_order
+        latest_partial["version"] = int(latest_partial["version"]) + 1
+        partial_event.set()
 
     def schedule_finalize(event: SttEvent, delay: float) -> None:
         existing = pending_finalize.pop(event.turn_order, None)
@@ -200,6 +226,7 @@ async def run_stt_translation_session(ws: WebSocket, events, starting_message: s
             existing.cancel()
         pending_finalize[event.turn_order] = asyncio.create_task(finalize_turn(event, delay))
 
+    partial_worker = asyncio.create_task(partial_translation_worker())
     await send({"type": "reset"})
     await send({"type": "status", "level": "info", "message": starting_message})
 
@@ -219,7 +246,7 @@ async def run_stt_translation_session(ws: WebSocket, events, starting_message: s
             schedule_partial_translation(text, event.turn_order)
 
             if event.end_of_turn:
-                schedule_finalize(event, 0.01)
+                schedule_finalize(event, 0.0)
             elif _looks_sentence_complete(text):
                 schedule_finalize(event, settings.final_punctuation_delay)
 
@@ -231,13 +258,11 @@ async def run_stt_translation_session(ws: WebSocket, events, starting_message: s
     except Exception as exc:
         await send({"type": "error", "message": _user_facing_error(exc)})
     finally:
+        partial_worker.cancel()
         for task in pending_finalize.values():
             if not task.done():
                 task.cancel()
-        await asyncio.gather(*pending_finalize.values(), return_exceptions=True)
-        if pending_partial_translation and not pending_partial_translation.done():
-            pending_partial_translation.cancel()
-            await asyncio.gather(pending_partial_translation, return_exceptions=True)
+        await asyncio.gather(partial_worker, *pending_finalize.values(), return_exceptions=True)
 
 
 def _youtube_cookies_configured() -> bool:
@@ -268,13 +293,13 @@ def _user_facing_error(exc: BaseException) -> str:
 
 def _looks_sentence_complete(text: str) -> bool:
     stripped = text.rstrip()
-    if len(stripped) < 14:
+    if len(stripped) < 12:
         return False
     return stripped.endswith((".", "?", "!"))
 
 
 def _should_partial_translate(text: str) -> bool:
     stripped = text.strip()
-    if len(stripped) < 4:
+    if len(stripped) < 3:
         return False
     return any(char.isalpha() for char in stripped)
