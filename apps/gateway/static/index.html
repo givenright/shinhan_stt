@@ -25,6 +25,8 @@ h1{font-size:20px}
 .audio{background:#1d7f64}.admin{background:#185fa5}.start{background:#344667}.stop{background:#501313;color:#f7c1c1}
 .status{padding:10px 12px;border-bottom:1px solid #252536;color:#8b93a3;font-size:12px;line-height:1.5;min-height:39px;overflow-wrap:anywhere}
 .status.error{color:#f09595}.status.success{color:#5dcaa5}
+.stats{padding:8px 12px;border-bottom:1px solid #252536;color:#8b93a3;font-size:11px;display:flex;gap:12px;flex-wrap:wrap}
+.stats b{color:#d9e8ff;font-weight:800}
 .stage{position:relative;background:#050508;min-height:430px;display:flex;align-items:center;justify-content:center;padding:20px}
 .wave{width:min(620px,100%);min-height:280px;display:flex;flex-direction:column;justify-content:center;gap:16px}
 .meter{height:92px;display:flex;align-items:end;justify-content:center;gap:8px;padding:10px 0}
@@ -71,6 +73,11 @@ h1{font-size:20px}
         <button class="btn stop" id="stopBtn">Stop</button>
       </div>
       <div class="status" id="status">Customers click Enable Audio. Admin starts the broadcast from the browser playing the earnings call.</div>
+      <div class="stats">
+        <span>Audio: <b id="audioState">locked</b></span>
+        <span>Packets: <b id="audioPackets">0</b></span>
+        <span>KB: <b id="audioKb">0</b></span>
+      </div>
       <div class="stage">
         <div class="wave">
           <div class="meter" aria-hidden="true">
@@ -115,6 +122,9 @@ const liveKorean = $("liveKorean");
 const audioBtn = $("audioBtn");
 const adminBtn = $("adminBtn");
 const stopBtn = $("stopBtn");
+const audioState = $("audioState");
+const audioPacketsEl = $("audioPackets");
+const audioKbEl = $("audioKb");
 
 let viewerWs = null;
 let adminWs = null;
@@ -125,6 +135,9 @@ let captureStream = null;
 let captureContext = null;
 let captureProcessor = null;
 let captureSource = null;
+let audioPackets = 0;
+let audioBytes = 0;
+let lastAudioNoticeAt = 0;
 const segments = new Map();
 
 function esc(value) {
@@ -172,6 +185,10 @@ function handlePayload(payload) {
     resetUi();
   } else if (payload.type === "status") {
     setStatus(payload.message, payload.level);
+  } else if (payload.type === "audio_status") {
+    audioPacketsEl.textContent = String(payload.chunks || audioPackets);
+    audioKbEl.textContent = String(payload.kb || Math.round(audioBytes / 1024));
+    if (!playbackContext) audioState.textContent = "click Enable Audio";
   } else if (payload.type === "error") {
     setStatus(payload.message, "error");
   } else if (payload.type === "partial") {
@@ -235,15 +252,41 @@ function connectViewer() {
   viewerWs.onerror = () => setStatus("Broadcast connection error.", "error");
 }
 async function enableAudio() {
-  playbackContext = playbackContext || new AudioContext({sampleRate: 16000});
+  playbackContext = playbackContext || new AudioContext();
   await playbackContext.resume();
+  const silent = playbackContext.createBuffer(1, 1, playbackContext.sampleRate);
+  const unlock = playbackContext.createBufferSource();
+  unlock.buffer = silent;
+  unlock.connect(playbackContext.destination);
+  unlock.start();
   playbackTime = Math.max(playbackContext.currentTime + 0.12, playbackTime);
   audioBtn.textContent = "Audio Enabled";
+  audioState.textContent = "enabled";
   setStatus("Audio playback enabled.", "success");
 }
-function playPcm(arrayBuffer) {
-  if (!playbackContext || playbackContext.state !== "running") return;
+async function playPcm(arrayBuffer) {
   if (!arrayBuffer || arrayBuffer.byteLength < 2) return;
+  audioPackets += 1;
+  audioBytes += arrayBuffer.byteLength;
+  audioPacketsEl.textContent = String(audioPackets);
+  audioKbEl.textContent = String(Math.round(audioBytes / 1024));
+  if (!playbackContext) {
+    const now = Date.now();
+    if (now - lastAudioNoticeAt > 3000) {
+      lastAudioNoticeAt = now;
+      audioState.textContent = "click Enable Audio";
+      setStatus("Audio is arriving. Click Enable Audio on the customer screen to hear it.", "error");
+    }
+    return;
+  }
+  if (playbackContext.state !== "running") {
+    await playbackContext.resume();
+  }
+  if (playbackContext.state !== "running") {
+    audioState.textContent = "blocked";
+    return;
+  }
+  audioState.textContent = "playing";
   const samples = new Int16Array(arrayBuffer);
   const audioBuffer = playbackContext.createBuffer(1, samples.length, 16000);
   const channel = audioBuffer.getChannelData(0);
@@ -251,6 +294,9 @@ function playPcm(arrayBuffer) {
   const source = playbackContext.createBufferSource();
   source.buffer = audioBuffer;
   source.connect(playbackContext.destination);
+  if (playbackTime > playbackContext.currentTime + 1.5) {
+    playbackTime = playbackContext.currentTime + 0.08;
+  }
   playbackTime = Math.max(playbackContext.currentTime + 0.08, playbackTime);
   source.start(playbackTime);
   playbackTime += audioBuffer.duration;

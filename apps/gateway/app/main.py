@@ -135,6 +135,9 @@ async def admin_audio_ws(ws: WebSocket) -> None:
     stt_chunk_bytes = int(bytes_per_second * 0.1)
     min_stt_chunk_bytes = int(bytes_per_second * 0.05)
     stt_buffer = bytearray()
+    audio_chunks_received = 0
+    audio_bytes_received = 0
+    last_audio_status_at = 0.0
 
     async def audio() -> AsyncGenerator[bytes, None]:
         while True:
@@ -159,7 +162,19 @@ async def admin_audio_ws(ws: WebSocket) -> None:
             message = await ws.receive()
             if message.get("bytes") is not None:
                 chunk = message["bytes"]
+                audio_chunks_received += 1
+                audio_bytes_received += len(chunk)
                 await broadcast_hub.broadcast_audio(chunk)
+                now = time.monotonic()
+                if audio_chunks_received == 1 or now - last_audio_status_at >= 5:
+                    last_audio_status_at = now
+                    await broadcast_hub.broadcast_json(
+                        {
+                            "type": "audio_status",
+                            "chunks": audio_chunks_received,
+                            "kb": round(audio_bytes_received / 1024),
+                        }
+                    )
                 stt_buffer.extend(chunk)
                 while len(stt_buffer) >= stt_chunk_bytes:
                     stt_chunk = bytes(stt_buffer[:stt_chunk_bytes])
