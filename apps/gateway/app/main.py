@@ -86,26 +86,6 @@ async def ui_ws(ws: WebSocket) -> None:
             await asyncio.gather(session_task, return_exceptions=True)
 
 
-@app.websocket("/ws/browser-audio")
-async def browser_audio_ws(ws: WebSocket) -> None:
-    await ws.accept()
-    queue: asyncio.Queue[bytes | None] = asyncio.Queue(maxsize=200)
-    session_task = asyncio.create_task(run_browser_audio_session(ws, queue))
-    try:
-        while True:
-            message = await ws.receive()
-            if message.get("bytes") is not None:
-                await queue.put(message["bytes"])
-            elif message.get("text") == "stop":
-                await queue.put(None)
-                break
-    except WebSocketDisconnect:
-        pass
-    finally:
-        await queue.put(None)
-        await asyncio.gather(session_task, return_exceptions=True)
-
-
 async def run_url_session(ws: WebSocket, url: str) -> None:
     source = URLAudioSource(url, settings.ingress_chunk_seconds)
     stt = AssemblyAIStreamingClient()
@@ -119,7 +99,7 @@ async def run_url_session(ws: WebSocket, url: str) -> None:
             ws,
             stt.stream(audio()),
             starting_message=(
-                "YouTube 오디오를 준비하고 있습니다. "
+                "스트림 오디오를 준비하고 있습니다. "
                 f"cookies={_yes_no(_youtube_cookies_configured())}, "
                 f"proxy={_yes_no(bool(settings.ytdlp_proxy_url))}, "
                 f"impersonate={settings.ytdlp_impersonate or 'off'}"
@@ -127,24 +107,6 @@ async def run_url_session(ws: WebSocket, url: str) -> None:
         )
     finally:
         await source.stop()
-
-
-async def run_browser_audio_session(ws: WebSocket, queue: asyncio.Queue[bytes | None]) -> None:
-    stt = AssemblyAIStreamingClient()
-
-    async def audio() -> AsyncGenerator[bytes, None]:
-        while True:
-            chunk = await queue.get()
-            if chunk is None:
-                break
-            if chunk:
-                yield chunk
-
-    await run_stt_translation_session(
-        ws,
-        stt.stream(audio()),
-        starting_message="브라우저 오디오를 AssemblyAI STT에 연결하고 있습니다.",
-    )
 
 
 async def run_stt_translation_session(ws: WebSocket, events, starting_message: str) -> None:
@@ -177,9 +139,10 @@ async def run_stt_translation_session(ws: WebSocket, events, starting_message: s
             segment_seq += 1
         seq = int(segment_id.split("_")[-1])
         started = time.time()
-        await send({"type": "segment", "segment_id": segment_id, "seq": seq, "phase": "final_en", "text": text})
 
+        await send({"type": "segment", "segment_id": segment_id, "seq": seq, "phase": "final_en", "text": text})
         await send({"type": "translation_start", "segment_id": segment_id, "seq": seq})
+
         try:
             korean, trans_ms = await translator.translate(text, list(context))
         except Exception as exc:
@@ -289,8 +252,7 @@ def _user_facing_error(exc: BaseException) -> str:
     if "Sign in to confirm" in detail or "not a bot" in detail:
         return (
             "YouTube가 Railway 서버를 봇으로 판정했습니다. "
-            "이 영상은 서버 URL 방식으로 가져올 수 없습니다. "
-            "쿠키/프록시, 직접 HLS/audio URL, 또는 브라우저 오디오 방식이 필요합니다. "
+            "YouTube URL은 보조 기능입니다. 안정적인 서비스 입력은 직접 HLS/MP4/audio URL을 사용하세요. "
             f"상세: {detail}"
         )
     return f"처리 중 오류가 발생했습니다. 상세: {detail}"

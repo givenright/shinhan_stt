@@ -23,7 +23,7 @@ ASSEMBLYAI_API_KEY=your_assemblyai_key
 OPENAI_API_KEY=your_openai_key
 OPENAI_MODEL=gpt-4.1-mini
 OPENAI_FALLBACK_MODEL=gpt-4o-mini
-DEFAULT_STREAM_URL=https://www.youtube.com/watch?v=replace-with-video-id
+DEFAULT_STREAM_URL=https://example.com/live/stream.m3u8
 AUTO_START_STREAM=false
 ASSEMBLYAI_STREAMING_MODEL=u3-rt-pro
 ASSEMBLYAI_SAMPLE_RATE=16000
@@ -60,17 +60,29 @@ YTDLP_IMPERSONATE=chrome
 
 이 설정은 성공률을 올려주지만, YouTube가 로그인을 요구하는 경우에는 쿠키가 여전히 필요합니다.
 
-## 쿠키 없이 쓰는 운영 방식
+## 출시용 입력 방식
 
-임의의 YouTube URL을 서버가 직접 가져오는 방식은 YouTube 봇 탐지에 계속 걸릴 수 있습니다. 쿠키/프록시 없이 안정적으로 쓰려면 화면의 `탭오디오` 버튼을 사용하세요.
+출시용으로 안정적인 방식은 YouTube 페이지 URL이 아니라 직접 미디어 URL을 받는 것입니다.
 
-1. 데스크톱 Chrome에서 YouTube 영상을 다른 탭에 열고 재생합니다.
-2. 서비스 화면에서 `탭오디오`를 누릅니다.
-3. Chrome 공유 창에서 YouTube 탭을 선택합니다.
-4. `탭 오디오 공유`를 반드시 켭니다.
-5. 공유를 시작하면 브라우저가 들은 오디오가 서버로 전송되고 STT/번역이 시작됩니다.
+권장 입력:
 
-이 방식은 Railway 서버가 YouTube에 직접 접근하지 않으므로 YouTube 서버 IP 차단을 피합니다. 단, 모바일 브라우저는 탭 오디오 캡처 지원이 제한적입니다. 모바일 출시용으로 안정화하려면 자체 RTMP/HLS 소스나 라이선스된 스트림 공급 경로를 붙이는 것이 정석입니다.
+```text
+https://example.com/live/stream.m3u8
+https://example.com/video.mp4
+https://example.com/audio.mp3
+https://example.com/audio.m4a
+https://example.com/audio.wav
+```
+
+이 구조에서는 브라우저 플레이어와 서버 STT가 같은 원본 URL을 사용합니다.
+
+```text
+직접 미디어 URL
+   ├─ 브라우저 video 플레이어
+   └─ 서버 ffmpeg -> AssemblyAI STT -> OpenAI 번역
+```
+
+YouTube URL은 보조 기능으로만 두세요. Railway 같은 클라우드 서버에서 YouTube 페이지 URL을 직접 가져오면 봇 탐지에 막힐 수 있고, 제품 수준의 안정성을 보장하기 어렵습니다.
 
 ### 권장 방식: YTDLP_COOKIES_B64
 

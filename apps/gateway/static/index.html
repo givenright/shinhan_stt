@@ -2,115 +2,110 @@
 <html lang="ko">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
-<title>어닝콜 시청</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Live Caption Stream</title>
 <style>
 *{box-sizing:border-box;margin:0;padding:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Arial,sans-serif}
-body{background:#0e0e14;color:#fff;min-height:100vh;max-width:480px;margin:0 auto}
+body{background:#0e0e14;color:#fff;min-height:100vh}
 button,input{font:inherit}
-.pbar{padding:12px 20px 8px;display:flex;justify-content:space-between;align-items:center;background:#0e0e14}
-.pbar .tt{font-size:13px;font-weight:500;color:#fff}
-.ic{display:flex;gap:6px;align-items:center}.sig{width:14px;height:10px;display:flex;align-items:flex-end;gap:1.5px}
-.sig span{background:#fff;border-radius:1px;width:3px;display:block}.bat{width:20px;height:10px;border:1.5px solid #fff;border-radius:2px;position:relative}
-.bat:after{content:"";position:absolute;right:-4px;top:2px;width:2px;height:4px;background:#fff;border-radius:0 1px 1px 0}.bf{width:70%;height:100%;background:#fff;border-radius:1px}
-.nav{padding:11px 16px 9px;display:flex;align-items:center;justify-content:space-between;border-bottom:0.5px solid #1e1e28}
-.bk{width:28px;height:28px;border-radius:8px;background:#1a1a24;border:0.5px solid #2a2a35;display:flex;align-items:center;justify-content:center}
-.ba{width:7px;height:7px;border-left:1.5px solid #888;border-bottom:1.5px solid #888;transform:rotate(45deg);margin-left:3px}
-.hero{padding:12px 16px 10px;border-bottom:0.5px solid #1e1e28}
-.hero-row{display:flex;align-items:center;gap:10px;margin-bottom:8px}.tkr{width:38px;height:38px;border-radius:10px;background:#0c447c;color:#b5d4f4;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:600}
-.pr{display:flex;align-items:baseline;gap:8px}.tabs{display:flex;border-bottom:0.5px solid #1e1e28}
-.tab{flex:1;padding:12px 0;text-align:center;font-size:14px;color:#666;cursor:pointer;border-bottom:2px solid transparent;display:flex;align-items:center;justify-content:center;gap:5px}
-.tab.on{color:#378add;border-bottom:2px solid #378add;font-weight:500}.rdot{width:6px;height:6px;border-radius:50%;background:#e24b4a}
-.panel{display:none}.panel.on{display:block}.cb{padding:10px 16px 8px;border-bottom:0.5px solid #1e1e28}
-.url-row{display:flex;gap:7px;margin-bottom:8px}.url{flex:1;background:#1a1a24;border:0.5px solid #2a2a38;border-radius:8px;color:#ddd;height:38px;padding:0 11px;font-size:12px;min-width:0}
-.btn{height:38px;border:0;border-radius:8px;padding:0 12px;color:#fff;font-size:12px;font-weight:700;cursor:pointer}.start{background:#185fa5}.stop{background:#501313;color:#f7c1c1}
-.status{font-size:11px;color:#888;line-height:1.55;min-height:17px;margin-bottom:8px;overflow-wrap:anywhere}.status.error{color:#f09595}.status.success{color:#5dcaa5}
-.preview{position:relative;aspect-ratio:16/9;border-radius:10px;overflow:hidden;background:#09090d;border:0.5px solid #1e1e28;margin-bottom:8px}
-.preview iframe,.placeholder{position:absolute;inset:0;width:100%;height:100%;border:0}.placeholder{display:flex;align-items:center;justify-content:center;text-align:center;color:#555;font-size:12px;line-height:1.6;padding:16px}
-.caption-layer{position:absolute;left:10px;right:10px;bottom:10px;display:flex;flex-direction:column;gap:5px;pointer-events:none;z-index:3}.cap{padding:7px 9px;border-radius:8px;background:rgba(0,0,0,.72);box-shadow:0 6px 16px rgba(0,0,0,.28);line-height:1.45;text-shadow:0 1px 1px #000;overflow-wrap:anywhere}.cap-ko{font-size:15px;color:#fff;font-weight:700}.cap-en{font-size:12px;color:#d8e7ff}
-.ci-row{display:flex;gap:10px;margin-bottom:6px}.ci{font-size:11px;color:#555}.ci span{color:#ccc;font-weight:500}
-.chart{width:100%;height:88px;display:block}.lg{display:flex;gap:10px;margin-top:8px;flex-wrap:wrap}.li{display:flex;align-items:center;gap:3px;font-size:11px;color:#666}.ld{width:7px;height:7px;border-radius:50%}
-.vw{padding:14px 16px;border-bottom:0.5px solid #1e1e28}.vtrack{display:flex;height:6px;border-radius:3px;overflow:hidden;gap:1px;margin-bottom:10px}.vtb{background:#e24b4a}.vth{background:#888780}.vts{background:#185fa5}.vbtns{display:flex;gap:6px}.vbtn{flex:1;font-size:13px;font-weight:500;padding:10px 0;border-radius:8px;border:none;cursor:pointer;color:#fff}
-.tr{padding:16px;border-bottom:0.5px solid #1e1e28}.tr-hdr{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px}
-.pill{display:flex;align-items:center;gap:5px;background:#1a1a24;border:0.5px solid #2a2a35;border-radius:999px;padding:7px 11px;font-size:12px;color:#9fe1cb;font-weight:500}
-.tr-cards{display:flex;flex-direction:column;gap:7px}.tr-card{padding:13px 14px;background:#131320;border-radius:10px;border-left:2px solid #7f77dd}
-.speaker{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px}.spk{font-size:12px;color:#888}.state{font-size:11px;color:#555}.state.live{color:#f09595}.state.final{color:#5dcaa5}
-.ko{font-size:16px;color:#f3f7fb;line-height:1.72;white-space:pre-wrap;overflow-wrap:anywhere}.en{font-size:12px;color:#7d8491;line-height:1.65;margin-top:9px;padding-top:9px;border-top:0.5px solid #252532;white-space:pre-wrap;overflow-wrap:anywhere}
-.draft{opacity:.86;border-left-color:#ba7517}.final{border-left-color:#1d9e75}.feed{display:flex;flex-direction:column;gap:7px;max-height:370px;overflow:auto;padding-right:2px}
-.sec{padding:14px 16px}.sec-hdr{display:flex;align-items:center;gap:7px;margin-bottom:10px}.sec-icon{width:22px;height:22px;border-radius:6px;display:flex;align-items:center;justify-content:center;flex-shrink:0}.kw-row{display:flex;flex-wrap:wrap;gap:6px}.kw{font-size:12px;padding:5px 11px;border-radius:999px}.kwp{background:#173404;color:#c0dd97}.kwn{background:#501313;color:#f7c1c1}.kwu{background:#1a1a24;color:#888}.ai-cards{display:flex;flex-direction:column;gap:7px}.ai-card{font-size:13px;color:#aaa;line-height:1.8;background:#131320;border-radius:0 10px 10px 0;padding:12px 14px;border-left:2px solid #534ab7}
-.dv{height:0.5px;background:#1e1e28;margin:0 16px}.chat{padding:14px 14px 20px}.msgs{display:flex;flex-direction:column;gap:12px;margin-bottom:12px;max-height:190px;overflow:auto}.msg{display:flex;gap:8px;align-items:flex-start}.av{width:28px;height:28px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:500;flex-shrink:0}.inp-row{display:flex;gap:8px;align-items:center}.cinp{flex:1;background:#1a1a24;border:0.5px solid #2a2a38;border-radius:22px;padding:10px 14px;font-size:14px;color:#ccc;outline:none;min-width:0}.cinp::placeholder{color:#444}.sbtn{width:36px;height:36px;border-radius:50%;background:#185fa5;border:none;display:flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0;color:#fff}
+.app{max-width:1180px;margin:0 auto;padding:18px}
+.top{display:flex;align-items:center;justify-content:space-between;gap:14px;margin-bottom:14px}
+.brand{display:flex;align-items:center;gap:10px}.logo{width:36px;height:36px;border-radius:8px;background:#185fa5;display:grid;place-items:center;font-weight:800}
+h1{font-size:20px;font-weight:700;letter-spacing:0}.sub{font-size:12px;color:#8b93a3;margin-top:3px}
+.live{display:flex;align-items:center;gap:6px;color:#f09595;font-size:13px;font-weight:700}.dot{width:8px;height:8px;border-radius:50%;background:#e24b4a}
+.grid{display:grid;grid-template-columns:minmax(0,1.35fr) minmax(330px,.65fr);gap:16px;align-items:start}
+.panel{background:#131320;border:1px solid #252536;border-radius:8px;overflow:hidden}
+.controls{padding:12px;display:grid;grid-template-columns:1fr 108px 82px;gap:8px;border-bottom:1px solid #252536}
+.url{height:42px;background:#1a1a24;border:1px solid #2a2a38;border-radius:8px;color:#e7eaf0;padding:0 12px;font-size:13px;min-width:0}
+.btn{height:42px;border:0;border-radius:8px;color:#fff;font-size:13px;font-weight:800;cursor:pointer}.start{background:#185fa5}.stop{background:#501313;color:#f7c1c1}
+.status{padding:10px 12px;border-bottom:1px solid #252536;color:#8b93a3;font-size:12px;line-height:1.5;min-height:39px;overflow-wrap:anywhere}.status.error{color:#f09595}.status.success{color:#5dcaa5}
+.stage{position:relative;background:#050508;aspect-ratio:16/9}
+.stage video,.stage iframe{position:absolute;inset:0;width:100%;height:100%;border:0;background:#050508}
+.placeholder{position:absolute;inset:0;display:grid;place-items:center;text-align:center;color:#646b78;font-size:14px;line-height:1.6;padding:22px}
+.captions{position:absolute;left:20px;right:20px;bottom:18px;display:flex;flex-direction:column;gap:7px;z-index:4;pointer-events:none}
+.caption{background:rgba(0,0,0,.76);border:1px solid rgba(255,255,255,.12);border-radius:8px;padding:9px 12px;text-shadow:0 1px 1px #000;box-shadow:0 10px 28px rgba(0,0,0,.25);overflow-wrap:anywhere}
+.ko-cap{font-size:22px;line-height:1.42;font-weight:800;color:#fff}.en-cap{font-size:15px;line-height:1.4;color:#d9e8ff}
+.hint{padding:10px 12px;color:#666f80;font-size:12px;line-height:1.55;border-top:1px solid #252536}
+.cards{display:flex;flex-direction:column;gap:10px}.card{background:#131320;border:1px solid #252536;border-radius:8px;padding:13px}
+.head{display:flex;align-items:center;justify-content:space-between;margin-bottom:9px}.label{font-size:12px;color:#8b93a3;font-weight:800}.pill{font-size:11px;color:#9fe1cb;background:#1a1a24;border:1px solid #2a2a38;border-radius:999px;padding:5px 9px}
+.ko{font-size:17px;color:#f4f7fb;line-height:1.65;white-space:pre-wrap;overflow-wrap:anywhere}.en{font-size:13px;color:#8b93a3;line-height:1.6;margin-top:9px;padding-top:9px;border-top:1px solid #252536;white-space:pre-wrap;overflow-wrap:anywhere}
+.draft{border-left:3px solid #ba7517}.final{border-left:3px solid #1d9e75}.feed{display:flex;flex-direction:column;gap:8px;max-height:470px;overflow:auto}
+.mini{font-size:12px;color:#646b78;line-height:1.6}
+@media(max-width:900px){.app{padding:12px}.grid{grid-template-columns:1fr}.controls{grid-template-columns:1fr 88px 70px}.ko-cap{font-size:18px}.en-cap{font-size:13px}.captions{left:10px;right:10px;bottom:10px}}
 </style>
 </head>
 <body>
-<div class="pbar"><span class="tt" id="clock">9:41</span><div class="ic"><div class="sig"><span style="height:4px"></span><span style="height:6px"></span><span style="height:8px"></span><span style="height:10px"></span></div><div class="bat"><div class="bf"></div></div></div></div>
-<div class="nav"><div class="bk"><div class="ba"></div></div><span style="font-size:15px;font-weight:500">어닝콜 시청</span><div style="display:flex;align-items:center;gap:4px"><div style="width:7px;height:7px;border-radius:50%;background:#e24b4a"></div><span style="font-size:13px;color:#f09595;font-weight:500">LIVE</span></div></div>
-<div class="hero"><div class="hero-row"><div class="tkr">AAPL</div><div><div style="font-size:16px;font-weight:500">Apple Inc.</div><div style="font-size:12px;color:#888;margin-top:2px">실시간 영어 자막 · 한글 통역</div></div></div><div class="pr"><span style="font-size:22px;font-weight:500">$189.30</span><span style="font-size:14px;color:#5dcaa5">+$4.42 (+2.4%)</span></div></div>
-<div class="tabs"><div class="tab on" id="tab1" onclick="sw(1)"><div class="rdot"></div>라이브</div><div class="tab" id="tab2" onclick="sw(2)">분석</div></div>
-
-<div class="panel on" id="p1">
-  <div class="cb">
-    <div class="url-row"><input class="url" id="streamUrl" type="url" placeholder="YouTube Live URL"><button class="btn start" id="startBtn">URL</button><button class="btn start" id="captureBtn">탭오디오</button><button class="btn stop" id="stopBtn">중지</button></div>
-    <div class="status" id="status">URL을 입력하고 시작을 누르세요.</div>
-    <div class="preview" id="videoShell"><div class="placeholder">영상 미리보기와 서버 STT가 함께 시작됩니다.</div><div class="caption-layer"><div class="cap cap-ko" id="captionKo">한글 자막 대기 중</div><div class="cap cap-en" id="captionEn">English captions waiting</div></div></div>
-    <div class="ci-row"><div class="ci">현재 <span>$189.30</span></div><div class="ci">고가 <span>$190.12</span></div><div class="ci">저가 <span>$184.60</span></div></div>
-    <canvas id="mc" class="chart"></canvas>
-    <div class="lg"><div class="li"><div class="ld" style="background:#7f77dd"></div>영어 초안</div><div class="li"><div class="ld" style="background:#ba7517"></div>한글 초안</div><div class="li"><div class="ld" style="background:#1d9e75"></div>확정</div><div class="li"><div class="ld" style="background:#e24b4a"></div>라이브</div></div>
-  </div>
-
-  <div class="vw"><div style="font-size:13px;font-weight:500;color:#ccc;margin-bottom:8px;display:flex;justify-content:space-between"><span>지금 이 어닝콜, 어떻게 보시나요?</span><span style="font-weight:400;color:#555" id="vcnt">1,284명 참여</span></div><div class="vtrack"><div class="vtb" id="vb" style="width:58%"></div><div class="vth" id="vh" style="width:27%"></div><div class="vts" id="vs" style="width:15%"></div></div><div class="vbtns" id="vbtns"></div></div>
-
-  <div class="tr">
-    <div class="tr-hdr"><span style="font-size:15px;font-weight:500">실시간 번역</span><div class="pill" id="modePill">듣는 중</div></div>
-    <div class="tr-cards">
-      <div class="tr-card draft" id="liveCard"><div class="speaker"><span class="spk">LIVE DRAFT</span><span class="state live">실시간</span></div><div class="ko" id="partialKorean">영어가 들리면 한글 초안이 함께 표시됩니다.</div><div class="en" id="partialEnglish">영어 초안이 이곳에 표시됩니다.</div></div>
-      <div class="tr-card final" id="finalCard"><div class="speaker"><span class="spk">CONFIRMED</span><span class="state final">확정</span></div><div class="ko" id="liveKorean">문장이 완성되면 확정 번역으로 바뀝니다.</div><div class="en" id="liveEnglish">확정 영어 문장이 이곳에 표시됩니다.</div></div>
-      <div class="feed" id="feed"></div>
+<main class="app">
+  <header class="top">
+    <div class="brand">
+      <div class="logo">STT</div>
+      <div>
+        <h1>실시간 영상 자막</h1>
+        <div class="sub">직접 HLS/MP4/오디오 원본을 재생하고 같은 소스로 STT/번역합니다.</div>
+      </div>
     </div>
-  </div>
+    <div class="live"><span class="dot"></span>LIVE</div>
+  </header>
 
-  <div class="chat"><div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px"><span style="font-size:13px;font-weight:500;color:#ccc">실시간 채팅</span><span style="font-size:11px;color:#555">2,847명 시청 중</span></div><div class="msgs" id="msgs"><div class="msg"><div class="av" style="background:#0c447c;color:#b5d4f4">김</div><div style="flex:1;line-height:1.7"><span style="font-size:13px;font-weight:500;color:#ddd">김민재</span><span style="font-size:13px;color:#888;margin-left:7px">서비스 매출 좋네요</span></div></div><div class="msg"><div class="av" style="background:#26215c;color:#cecbf6">이</div><div style="flex:1;line-height:1.7"><span style="font-size:13px;font-weight:500;color:#ddd">이상준</span><span style="font-size:13px;color:#888;margin-left:7px">번역 속도 괜찮은데?</span></div></div></div><div class="inp-row"><input class="cinp" id="ci" placeholder="의견을 남겨보세요" onkeydown="sc(event)"><button class="sbtn" onclick="sc({key:'Enter'})">›</button></div></div>
-</div>
+  <section class="grid">
+    <div class="panel">
+      <div class="controls">
+        <input class="url" id="streamUrl" type="url" placeholder="https://example.com/live.m3u8 또는 video.mp4">
+        <button class="btn start" id="startBtn">시작</button>
+        <button class="btn stop" id="stopBtn">중지</button>
+      </div>
+      <div class="status" id="status">직접 HLS(.m3u8), MP4, MP3, M4A, WAV URL을 입력하세요. YouTube URL은 보조 기능입니다.</div>
+      <div class="stage" id="stage">
+        <div class="placeholder">영상이 이곳에서 재생되고, 영어/한글 자막이 영상 위에 표시됩니다.</div>
+        <div class="captions">
+          <div class="caption ko-cap" id="captionKo">한글 자막 대기 중</div>
+          <div class="caption en-cap" id="captionEn">English captions waiting</div>
+        </div>
+      </div>
+      <div class="hint">정확한 싱크가 필요하면 YouTube 페이지 URL보다 직접 HLS/MP4 원본을 사용하세요. 영상과 STT 오디오가 같은 URL에서 출발합니다.</div>
+    </div>
 
-<div class="panel" id="p2">
-  <div class="sec"><div class="sec-hdr"><div class="sec-icon" style="background:#173404;color:#97c459">↗</div><span style="font-size:13px;font-weight:500;color:#ccc">긍정 신호</span></div><div class="kw-row"><span class="kw kwp">서비스 매출 최고</span><span class="kw kwp">마진 개선</span><span class="kw kwp">현금흐름 안정</span><span class="kw kwp">가이던스 상향</span></div></div>
-  <div class="dv"></div>
-  <div class="sec"><div class="sec-hdr"><div class="sec-icon" style="background:#501313;color:#f09595">!</div><span style="font-size:13px;font-weight:500;color:#ccc">리스크</span></div><div class="kw-row"><span class="kw kwn">중국 매출 둔화</span><span class="kw kwn">환율 부담</span><span class="kw kwu">하드웨어 성장률</span></div></div>
-  <div class="dv"></div>
-  <div class="sec"><div class="sec-hdr"><div class="sec-icon" style="background:#26215c;color:#afa9ec">AI</div><span style="font-size:13px;font-weight:500;color:#ccc">AI 실시간 요약</span></div><div class="ai-cards"><div class="ai-card">확정 번역이 쌓이면 주요 숫자, 가이던스, 위험 요인을 이 탭에서 요약할 수 있습니다.</div><div class="ai-card">현재 버전은 STT와 번역 지연을 줄이는 데 집중합니다.</div></div></div>
-</div>
+    <aside class="cards">
+      <div class="card draft">
+        <div class="head"><span class="label">LIVE DRAFT</span><span class="pill" id="modePill">대기</span></div>
+        <div class="ko" id="partialKorean">영어가 들리면 한글 초안이 표시됩니다.</div>
+        <div class="en" id="partialEnglish">English draft appears here.</div>
+      </div>
+      <div class="card final">
+        <div class="head"><span class="label">CONFIRMED</span><span class="pill">확정</span></div>
+        <div class="ko" id="liveKorean">문장이 완성되면 확정 번역으로 바뀝니다.</div>
+        <div class="en" id="liveEnglish">Final English sentence appears here.</div>
+      </div>
+      <div class="card">
+        <div class="head"><span class="label">SEGMENTS</span><span class="pill">기록</span></div>
+        <div class="feed" id="feed"><div class="mini">아직 확정된 문장이 없습니다.</div></div>
+      </div>
+    </aside>
+  </section>
+</main>
 
+<script src="https://cdn.jsdelivr.net/npm/hls.js@1.5.20/dist/hls.min.js"></script>
 <script>
 const $=id=>document.getElementById(id);
-const streamUrlInput=$("streamUrl"),statusEl=$("status"),liveEnglish=$("liveEnglish"),partialEnglish=$("partialEnglish"),liveKorean=$("liveKorean"),partialKorean=$("partialKorean"),feed=$("feed"),videoShell=$("videoShell"),modePill=$("modePill");
-const segments=new Map();let ws=null,audioWs=null,captureStream=null,audioContext=null,processor=null;
-function updateClock(){const d=new Date();$("clock").textContent=`${d.getHours()}:${String(d.getMinutes()).padStart(2,"0")}`;}setInterval(updateClock,15000);updateClock();
+const streamUrlInput=$("streamUrl"),statusEl=$("status"),stage=$("stage"),feed=$("feed"),modePill=$("modePill");
+const partialEnglish=$("partialEnglish"),partialKorean=$("partialKorean"),liveEnglish=$("liveEnglish"),liveKorean=$("liveKorean");
+let ws=null,hls=null;const segments=new Map();
 function esc(t){return String(t||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");}
-function setStatus(t,l="info"){statusEl.textContent=t;statusEl.className=`status ${l==="error"?"error":l==="success"?"success":""}`;}
 function wsUrl(){return `${location.protocol==="https:"?"wss":"ws"}://${location.host}/ws/ui`;}
-function parseYoutubeId(url){try{const u=new URL(url);if(u.hostname.includes("youtu.be"))return u.pathname.slice(1);if(u.hostname.includes("youtube.com"))return u.searchParams.get("v")||"";}catch{return""}return"";}
-function captionHtml(){return `<div class="caption-layer"><div class="cap cap-ko" id="captionKo">한글 자막 대기 중</div><div class="cap cap-en" id="captionEn">English captions waiting</div></div>`;}
-function setPreview(url){const id=parseYoutubeId(url);videoShell.innerHTML=id?`<iframe src="https://www.youtube.com/embed/${encodeURIComponent(id)}?autoplay=1&rel=0" allow="autoplay; encrypted-media; picture-in-picture" allowfullscreen></iframe>${captionHtml()}`:`<div class="placeholder">직접 오디오 URL은 미리보기 없이 처리됩니다.</div>${captionHtml()}`;}
-function setCaptions(en,ko){const ce=$("captionEn"),ck=$("captionKo");if(ce&&en!==undefined)ce.textContent=en||" ";if(ck&&ko!==undefined)ck.textContent=ko||" ";}
-function resetUi(){segments.clear();partialEnglish.textContent="영어 초안이 이곳에 표시됩니다.";partialKorean.textContent="영어가 들리면 한글 초안이 함께 표시됩니다.";liveEnglish.textContent="확정 영어 문장이 이곳에 표시됩니다.";liveKorean.textContent="문장이 완성되면 확정 번역으로 바뀝니다.";feed.innerHTML="";modePill.textContent="듣는 중";setCaptions("English captions waiting","한글 자막 대기 중");}
-function renderFeed(){const items=[...segments.values()].sort((a,b)=>b.seq-a.seq).slice(0,8);feed.innerHTML=items.map(x=>`<div class="tr-card final"><div class="speaker"><span class="spk">${esc(x.id)}</span><span class="state final">${x.transMs?x.transMs+"ms":"번역 중"}</span></div><div class="ko">${esc(x.ko||"번역 중입니다.")}</div><div class="en">${esc(x.en||"영어 문장 대기 중입니다.")}</div></div>`).join("");}
-function connect(){if(ws&&(ws.readyState===WebSocket.OPEN||ws.readyState===WebSocket.CONNECTING))return ws;ws=new WebSocket(wsUrl());ws.onopen=()=>setStatus("서버와 연결되었습니다. STT 세션을 시작합니다.");ws.onmessage=e=>handleWsPayload(JSON.parse(e.data));ws.onclose=()=>setStatus("서버 연결이 종료되었습니다.");ws.onerror=()=>setStatus("WebSocket 연결 오류가 발생했습니다.","error");return ws;}
-function audioWsUrl(){return `${location.protocol==="https:"?"wss":"ws"}://${location.host}/ws/browser-audio`;}
-function downsampleTo16k(input,rate){if(rate===16000)return floatToPcm16(input);const ratio=rate/16000,len=Math.floor(input.length/ratio),out=new Float32Array(len);for(let i=0;i<len;i++){const start=Math.floor(i*ratio),end=Math.floor((i+1)*ratio);let sum=0,n=0;for(let j=start;j<end&&j<input.length;j++){sum+=input[j];n++;}out[i]=n?sum/n:0;}return floatToPcm16(out);}
-function floatToPcm16(input){const out=new Int16Array(input.length);for(let i=0;i<input.length;i++){const s=Math.max(-1,Math.min(1,input[i]));out[i]=s<0?s*32768:s*32767;}return out.buffer;}
-function handleWsPayload(p){if(p.type==="reset")resetUi();else if(p.type==="status")setStatus(p.message,p.level);else if(p.type==="error")setStatus(p.message,"error");else if(p.type==="partial"){partialEnglish.textContent=p.text||"";setCaptions(p.text||"",undefined);modePill.textContent="실시간 통역 중";}else if(p.type==="partial_ko"){partialKorean.textContent=p.text||"";setCaptions(undefined,p.text||"");}else if(p.type==="translation_start"){modePill.textContent="확정 번역 중";const item=segments.get(p.segment_id)||{id:p.segment_id,seq:p.seq,en:"",ko:"",transMs:0};item.ko="";segments.set(p.segment_id,item);renderFeed();}else if(p.type==="translation_error"){const item=segments.get(p.segment_id)||{id:p.segment_id,seq:p.seq,en:"",ko:"",transMs:0};item.ko="번역 오류: "+(p.message||"알 수 없는 오류");liveKorean.textContent=item.ko;setCaptions(undefined,item.ko);modePill.textContent="번역 오류";setStatus(item.ko,"error");segments.set(p.segment_id,item);renderFeed();}else if(p.type==="segment"){const item=segments.get(p.segment_id)||{id:p.segment_id,seq:p.seq,en:"",ko:"",transMs:0};if(p.phase==="final_en"){item.en=p.text||"";liveEnglish.textContent=item.en;setCaptions(item.en,undefined);partialEnglish.textContent="다음 문장을 듣고 있습니다.";}if(p.phase==="final_ko"){item.ko=p.text||"";item.transMs=p.trans_ms||0;liveKorean.textContent=item.ko;setCaptions(undefined,item.ko);partialKorean.textContent="다음 문장을 통역하고 있습니다.";modePill.textContent="확정 완료";setStatus("확정 문장을 갱신했습니다.","success");}segments.set(p.segment_id,item);renderFeed();}}
-async function startBrowserAudio(){if(!navigator.mediaDevices||!navigator.mediaDevices.getDisplayMedia){setStatus("이 브라우저는 탭 오디오 캡처를 지원하지 않습니다. 데스크톱 Chrome을 사용하세요.","error");return;}resetUi();setStatus("공유 창에서 YouTube 탭을 고르고 '탭 오디오 공유'를 켜세요.");captureStream=await navigator.mediaDevices.getDisplayMedia({video:true,audio:true});if(!captureStream.getAudioTracks().length){setStatus("오디오가 선택되지 않았습니다. Chrome 탭과 오디오 공유를 선택해야 합니다.","error");stopBrowserAudio();return;}audioWs=new WebSocket(audioWsUrl());audioWs.binaryType="arraybuffer";audioWs.onmessage=e=>handleWsPayload(JSON.parse(e.data));audioWs.onerror=()=>setStatus("브라우저 오디오 WebSocket 오류가 발생했습니다.","error");await new Promise((resolve,reject)=>{audioWs.onopen=resolve;audioWs.onclose=()=>reject(new Error("audio websocket closed"));});audioContext=new AudioContext();const source=audioContext.createMediaStreamSource(captureStream);processor=audioContext.createScriptProcessor(4096,1,1);processor.onaudioprocess=e=>{if(audioWs&&audioWs.readyState===WebSocket.OPEN){audioWs.send(downsampleTo16k(e.inputBuffer.getChannelData(0),audioContext.sampleRate));}};source.connect(processor);processor.connect(audioContext.destination);captureStream.getTracks().forEach(t=>t.onended=stopBrowserAudio);setStatus("브라우저 탭 오디오로 STT를 시작했습니다.","success");}
-function stopBrowserAudio(){if(processor){processor.disconnect();processor=null;}if(audioContext){audioContext.close();audioContext=null;}if(captureStream){captureStream.getTracks().forEach(t=>t.stop());captureStream=null;}if(audioWs&&audioWs.readyState===WebSocket.OPEN)audioWs.send("stop");if(audioWs)audioWs.close();audioWs=null;}
-function startUrlMode(){const url=streamUrlInput.value.trim();if(!url){setStatus("먼저 YouTube Live URL 또는 오디오 URL을 입력하세요.","error");return;}setPreview(url);const s=connect();const start=()=>s.send(JSON.stringify({type:"start",url}));if(s.readyState===WebSocket.OPEN)start();else s.addEventListener("open",start,{once:true});}
-$("startBtn").onclick=startUrlMode;
-$("captureBtn").onclick=()=>startBrowserAudio().catch(err=>setStatus("탭 오디오 시작 실패: "+(err.message||err),"error"));
-$("stopBtn").onclick=()=>{stopBrowserAudio();if(ws&&ws.readyState===WebSocket.OPEN)ws.send(JSON.stringify({type:"stop"}));};
-function sw(n){$("tab1").className="tab"+(n===1?" on":"");$("tab2").className="tab"+(n===2?" on":"");$("p1").className="panel"+(n===1?" on":"");$("p2").className="panel"+(n===2?" on":"");if(n===1)drawChart();}
-const vd={buy:58,hold:27,sell:15};let mv=null;function renderBtns(){const total=vd.buy+vd.hold+vd.sell,bp=Math.round(vd.buy/total*100),hp=Math.round(vd.hold/total*100),sp=100-bp-hp;const data={buy:["매수","#7a1a1a","#e24b4a",bp],hold:["관망","#333","#888780",hp],sell:["매도","#0a2a4a","#185fa5",sp]};$("vbtns").innerHTML="";["buy","hold","sell"].forEach(k=>{const b=document.createElement("button");b.className="vbtn";b.textContent=`${data[k][0]} ${data[k][3]}%`;b.style.background=mv===k?data[k][2]:data[k][1];b.onclick=()=>vote(k);$("vbtns").appendChild(b);});}
-function vote(k){if(mv===k)return;if(mv)vd[mv]=Math.max(0,vd[mv]-1);mv=k;vd[k]++;const t=vd.buy+vd.hold+vd.sell,bp=Math.round(vd.buy/t*100),hp=Math.round(vd.hold/t*100),sp=100-bp-hp;$("vb").style.width=bp+"%";$("vh").style.width=hp+"%";$("vs").style.width=sp+"%";renderBtns();}
-function drawChart(){const cv=$("mc"),W=cv.offsetWidth,H=88;cv.width=W;cv.height=H;const c=cv.getContext("2d"),p=[184.6,184.9,185.3,185.1,185.8,186.2,185.9,186.5,187.1,186.8,187.4,187.2,187.8,188.3,188.1,188.6,188.4,189.0,188.7,189.2,188.9,189.5,189.1,189.3];const mn=Math.min(...p)-.3,mx=Math.max(...p)+.3,x=i=>i/(p.length-1)*W,y=v=>H-(v-mn)/(mx-mn)*H,g=c.createLinearGradient(0,0,0,H);g.addColorStop(0,"rgba(55,138,221,.2)");g.addColorStop(1,"rgba(55,138,221,0)");c.beginPath();c.moveTo(x(0),y(p[0]));for(let i=1;i<p.length;i++)c.lineTo(x(i),y(p[i]));c.lineTo(W,H);c.lineTo(0,H);c.fillStyle=g;c.fill();c.beginPath();c.moveTo(x(0),y(p[0]));for(let i=1;i<p.length;i++)c.lineTo(x(i),y(p[i]));c.strokeStyle="#378add";c.lineWidth=2;c.stroke();}
-function sc(e){if(e.key!=="Enter")return;const inp=$("ci"),txt=inp.value.trim();if(!txt)return;inp.value="";const d=document.createElement("div");d.className="msg";d.innerHTML=`<div class="av" style="background:#085041;color:#9fe1cb">나</div><div style="flex:1;line-height:1.7"><span style="font-size:13px;font-weight:500;color:#ddd">나</span><span style="font-size:13px;color:#888;margin-left:7px">${esc(txt)}</span></div>`;$("msgs").appendChild(d);}
-async function loadConfig(){try{const r=await fetch("/config");const c=await r.json();if(c.default_stream_url){streamUrlInput.value=c.default_stream_url;setPreview(c.default_stream_url);}if(c.auto_start_stream&&c.default_stream_url)startUrlMode();}catch{}}
-window.onload=()=>{renderBtns();drawChart();loadConfig();};window.onresize=drawChart;
+function setStatus(t,l="info"){statusEl.textContent=t;statusEl.className=`status ${l==="error"?"error":l==="success"?"success":""}`;}
+function setCaptions(en,ko){if(en!==undefined)$("captionEn").textContent=en||" ";if(ko!==undefined)$("captionKo").textContent=ko||" ";}
+function captionHtml(){return `<div class="captions"><div class="caption ko-cap" id="captionKo">한글 자막 대기 중</div><div class="caption en-cap" id="captionEn">English captions waiting</div></div>`;}
+function isDirectMedia(url){return /\.(m3u8|mp4|webm|mov|mp3|m4a|wav|aac)(\?|#|$)/i.test(url);}
+function youtubeId(url){try{const u=new URL(url);if(u.hostname.includes("youtu.be"))return u.pathname.slice(1);if(u.hostname.includes("youtube.com"))return u.searchParams.get("v")||"";}catch{}return"";}
+function renderPlayer(url){if(hls){hls.destroy();hls=null;}const yt=youtubeId(url);if(isDirectMedia(url)){stage.innerHTML=`<video id="player" controls playsinline crossorigin="anonymous"></video>${captionHtml()}`;const video=$("player");if(/\.m3u8(\?|#|$)/i.test(url)&&window.Hls&&Hls.isSupported()){hls=new Hls({lowLatencyMode:true});hls.loadSource(url);hls.attachMedia(video);}else{video.src=url;}video.play().catch(()=>{});return;}if(yt){stage.innerHTML=`<iframe src="https://www.youtube.com/embed/${encodeURIComponent(yt)}?autoplay=1&rel=0" allow="autoplay; encrypted-media; picture-in-picture" allowfullscreen></iframe>${captionHtml()}`;return;}stage.innerHTML=`<div class="placeholder">이 URL은 브라우저 미리보기가 어려울 수 있지만 서버 STT는 시도합니다.</div>${captionHtml()}`;}
+function resetUi(){segments.clear();partialEnglish.textContent="English draft appears here.";partialKorean.textContent="영어가 들리면 한글 초안이 표시됩니다.";liveEnglish.textContent="Final English sentence appears here.";liveKorean.textContent="문장이 완성되면 확정 번역으로 바뀝니다.";feed.innerHTML='<div class="mini">아직 확정된 문장이 없습니다.</div>';modePill.textContent="대기";setCaptions("English captions waiting","한글 자막 대기 중");}
+function renderFeed(){const items=[...segments.values()].sort((a,b)=>b.seq-a.seq).slice(0,10);feed.innerHTML=items.length?items.map(x=>`<div class="card final"><div class="head"><span class="label">${esc(x.id)}</span><span class="pill">${x.transMs?x.transMs+"ms":"번역 중"}</span></div><div class="ko">${esc(x.ko||"번역 중입니다.")}</div><div class="en">${esc(x.en||"영어 문장 대기 중입니다.")}</div></div>`).join(""):'<div class="mini">아직 확정된 문장이 없습니다.</div>';}
+function handlePayload(p){if(p.type==="reset")resetUi();else if(p.type==="status")setStatus(p.message,p.level);else if(p.type==="error")setStatus(p.message,"error");else if(p.type==="partial"){partialEnglish.textContent=p.text||"";setCaptions(p.text||"",undefined);modePill.textContent="실시간";}else if(p.type==="partial_ko"){partialKorean.textContent=p.text||"";setCaptions(undefined,p.text||"");}else if(p.type==="translation_start"){modePill.textContent="번역 중";const item=segments.get(p.segment_id)||{id:p.segment_id,seq:p.seq,en:"",ko:"",transMs:0};item.ko="";segments.set(p.segment_id,item);renderFeed();}else if(p.type==="translation_error"){const item=segments.get(p.segment_id)||{id:p.segment_id,seq:p.seq,en:"",ko:"",transMs:0};item.ko="번역 오류: "+(p.message||"알 수 없는 오류");liveKorean.textContent=item.ko;setCaptions(undefined,item.ko);modePill.textContent="오류";setStatus(item.ko,"error");segments.set(p.segment_id,item);renderFeed();}else if(p.type==="segment"){const item=segments.get(p.segment_id)||{id:p.segment_id,seq:p.seq,en:"",ko:"",transMs:0};if(p.phase==="final_en"){item.en=p.text||"";liveEnglish.textContent=item.en;setCaptions(item.en,undefined);partialEnglish.textContent="다음 문장을 듣고 있습니다.";}if(p.phase==="final_ko"){item.ko=p.text||"";item.transMs=p.trans_ms||0;liveKorean.textContent=item.ko;setCaptions(undefined,item.ko);partialKorean.textContent="다음 문장을 통역하고 있습니다.";modePill.textContent="확정";setStatus("확정 문장을 갱신했습니다.","success");}segments.set(p.segment_id,item);renderFeed();}}
+function connect(){if(ws&&(ws.readyState===WebSocket.OPEN||ws.readyState===WebSocket.CONNECTING))return ws;ws=new WebSocket(wsUrl());ws.onopen=()=>setStatus("서버와 연결되었습니다.");ws.onmessage=e=>handlePayload(JSON.parse(e.data));ws.onclose=()=>setStatus("서버 연결이 종료되었습니다.");ws.onerror=()=>setStatus("WebSocket 연결 오류가 발생했습니다.","error");return ws;}
+function start(){const url=streamUrlInput.value.trim();if(!url){setStatus("먼저 스트림 URL을 입력하세요.","error");return;}renderPlayer(url);const socket=connect();const send=()=>socket.send(JSON.stringify({type:"start",url}));if(socket.readyState===WebSocket.OPEN)send();else socket.addEventListener("open",send,{once:true});}
+$("startBtn").onclick=start;$("stopBtn").onclick=()=>{if(ws&&ws.readyState===WebSocket.OPEN)ws.send(JSON.stringify({type:"stop"}));const v=$("player");if(v)v.pause();};
+async function loadConfig(){try{const r=await fetch("/config");const c=await r.json();if(c.default_stream_url){streamUrlInput.value=c.default_stream_url;renderPlayer(c.default_stream_url);}if(c.auto_start_stream&&c.default_stream_url)start();}catch{}}
+window.onload=loadConfig;
 </script>
 </body>
 </html>
