@@ -21,7 +21,6 @@ GLOSSARY = {
     "quarter over quarter": "전분기 대비",
 }
 
-
 BAD_TRANSLATION_PATTERNS = (
     "번역할 내용이 부족",
     "문맥이나 추가 정보",
@@ -31,6 +30,8 @@ BAD_TRANSLATION_PATTERNS = (
     "cannot translate",
     "not enough context",
 )
+
+FILLERS = {"um", "uh", "umm", "uhh", "ah", "oh", "er", "hmm"}
 
 
 def _glossary_text() -> str:
@@ -61,12 +62,13 @@ class Translator:
             raise RuntimeError("OPENAI_API_KEY is not configured.")
         self.client = AsyncOpenAI(api_key=settings.openai_api_key, timeout=settings.openai_timeout)
 
-    async def translate(self, text: str, context: list[str]) -> tuple[str, int]:
+    async def translate(self, text: str, context: list[str], *, partial: bool = False) -> tuple[str, int]:
         started = time.time()
         cleaned = _clean_source(text)
         if not _should_translate(cleaned):
             return "", 0
-        response = await self._create_response(settings.openai_model, cleaned, context)
+
+        response = await self._create_response(settings.openai_model, cleaned, context, partial=partial)
         translated = _clean_translation(response.output_text)
         if _is_bad_translation(translated):
             translated = _fallback_fragment_translation(cleaned)
@@ -78,25 +80,29 @@ class Translator:
             yield korean, None
         yield korean, elapsed
 
-    def _user_input(self, text: str, context: list[str]) -> str:
+    def _user_input(self, text: str, context: list[str], *, partial: bool) -> str:
         context_text = "\n".join(f"- {item}" for item in context[-settings.translation_context_size :])
+        mode = "This is an unstable live partial caption. Translate it now; it may change soon." if partial else "This is a completed live caption."
         if context_text:
-            return f"Previous English context:\n{context_text}\n\nEnglish to translate:\n{text}"
-        return f"English to translate:\n{text}"
+            return f"{mode}\n\nPrevious English context:\n{context_text}\n\nEnglish to translate:\n{text}"
+        return f"{mode}\n\nEnglish to translate:\n{text}"
 
-    async def _create_response(self, model: str, text: str, context: list[str]):
+    async def _create_response(self, model: str, text: str, context: list[str], *, partial: bool):
+        max_output_tokens = 90 if partial else 160
         try:
             return await self.client.responses.create(
                 model=model,
                 instructions=SYSTEM_PROMPT,
-                input=self._user_input(text, context),
+                input=self._user_input(text, context, partial=partial),
+                max_output_tokens=max_output_tokens,
             )
         except BadRequestError as exc:
             if model != settings.openai_fallback_model and "model" in str(exc).lower():
                 return await self.client.responses.create(
                     model=settings.openai_fallback_model,
                     instructions=SYSTEM_PROMPT,
-                    input=self._user_input(text, context),
+                    input=self._user_input(text, context, partial=partial),
+                    max_output_tokens=max_output_tokens,
                 )
             raise
 
@@ -119,7 +125,7 @@ def _should_translate(text: str) -> bool:
     if not text:
         return False
     normalized = re.sub(r"[^a-zA-Z]", "", text).lower()
-    return normalized not in {"um", "uh", "umm", "uhh", "ah", "oh"}
+    return normalized not in FILLERS
 
 
 def _is_bad_translation(text: str) -> bool:
@@ -128,5 +134,5 @@ def _is_bad_translation(text: str) -> bool:
 
 
 def _fallback_fragment_translation(text: str) -> str:
-    # Last-resort display: avoid showing model meta-talk in the subtitle.
+    # Avoid showing model meta-talk such as "there is not enough context".
     return text
