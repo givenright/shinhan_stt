@@ -1,30 +1,25 @@
 # shinhan_stt
 
-YouTube Live 어닝콜 URL을 받아 영상 위에 영어/한국어 실시간 자막을 표시하는 FastAPI 서비스입니다.
+IR 웹캐스트 URL을 서버가 직접 가져와 AssemblyAI STT로 영어를 전사하고, OpenAI로 한국어 실시간 자막을 만드는 FastAPI 서비스입니다.
+
+현재 기본 테스트 URL:
+
+```text
+https://ir.tesla.com/webcast-2026-01-28
+```
 
 ## 구조
 
 ```text
-YouTube Live URL
-  ├─ 브라우저: YouTube iframe으로 영상 표시
-  └─ 서버: yt-dlp + ffmpeg로 오디오 추출
-       └─ AssemblyAI Streaming STT
-            └─ OpenAI 번역
-                 └─ WebSocket으로 영상 위 자막 표시
-```
-
-직접 HLS/MP4/audio URL도 보조 입력으로 지원하지만, 기본 입력은 YouTube URL입니다.
-
-YouTube가 Railway 서버를 봇으로 막는 경우에는 `관리자 송출` 모드를 사용합니다.
-
-```text
-관리자 PC에서 YouTube 재생
-  └─ 관리자 화면에서 탭/화면 오디오 송출
-       └─ 브라우저가 16k PCM 오디오를 WebSocket으로 전송
+IR Webcast URL
+  └─ 서버: 웹페이지 HTML에서 iframe/미디어/YouTube/웹캐스트 링크 탐색
+       └─ yt-dlp 또는 ffmpeg로 실제 오디오 추출
             └─ AssemblyAI Streaming STT
                  └─ OpenAI 번역
-                      └─ 고객 화면으로 자막 방송
+                      └─ WebSocket으로 영어/한국어 자막 표시
 ```
+
+직접 HLS/MP4/audio URL도 지원합니다.
 
 ## Railway Variables
 
@@ -36,11 +31,12 @@ OPENAI_API_KEY=your_openai_key
 OPENAI_MODEL=gpt-4.1-mini
 OPENAI_FALLBACK_MODEL=gpt-4o-mini
 
-DEFAULT_STREAM_URL=https://www.youtube.com/watch?v=replace-with-video-id
-AUTO_START_STREAM=true
+DEFAULT_STREAM_URL=https://ir.tesla.com/webcast-2026-01-28
+AUTO_START_STREAM=false
 
 ASSEMBLYAI_STREAMING_MODEL=u3-rt-pro
 ASSEMBLYAI_SAMPLE_RATE=16000
+ASSEMBLYAI_FORMAT_TURNS=true
 ASSEMBLYAI_MIN_TURN_SILENCE_MS=250
 ASSEMBLYAI_MAX_TURN_SILENCE_MS=550
 
@@ -79,91 +75,43 @@ https://your-app.up.railway.app/health
 https://your-app.up.railway.app/config
 ```
 
-## YouTube 차단 대응
+## 사용법
 
-아래 오류는 코드가 STT까지 가지 못하고, `yt-dlp`가 YouTube URL을 해석하기 전에 막힌 상태입니다.
-
-```text
-Sign in to confirm you're not a bot
-```
-
-YouTube가 Railway 서버 IP를 봇으로 판단한 것입니다. 이 경우 아래 순서로 대응하세요.
-
-### 0. 가장 쉬운 우회: 관리자 송출 모드
-
-쿠키/프록시 없이 바로 테스트하려면 이 방식을 사용하세요. 고객은 오디오 권한을 허용할 필요가 없습니다.
-
-1. 관리자가 YouTube 라이브를 다른 탭, 다른 창, 또는 다른 브라우저에서 재생합니다.
-2. 관리자가 서비스 화면에서 `관리자 송출`을 누릅니다.
-3. 관리자 브라우저 공유 창에서 YouTube가 재생 중인 탭/화면을 선택합니다.
-4. `탭 오디오 공유` 또는 `시스템 오디오 공유`를 반드시 켭니다.
-5. 공유를 시작하면 서버가 YouTube를 직접 가져오지 않고, 관리자 브라우저가 들려주는 오디오를 STT로 보냅니다.
-6. 고객은 같은 서비스 URL을 열기만 하면 자막 방송을 자동으로 수신합니다.
-
-이 방식은 YouTube 서버 차단을 피할 수 있습니다. 대신 관리자 PC 한 대가 라이브 동안 계속 송출해야 합니다.
-
-### 1. 먼저 player client 우회
-
-기본값은 이미 아래처럼 설정되어 있습니다.
-
-```env
-YTDLP_IMPERSONATE=chrome
-YTDLP_PLAYER_CLIENTS=mweb,web_safari,tv,android,web
-```
-
-재배포 후 `/health`에서 `youtube_player_clients`가 위 값으로 보이는지 확인합니다.
-
-### 2. 운영용 YouTube 쿠키
-
-그래도 막히면 쿠키가 필요합니다. 테스트용 Google 계정으로 YouTube에 로그인한 뒤 `cookies.txt`를 export하고 base64로 변환합니다.
-
-```powershell
-[Convert]::ToBase64String([IO.File]::ReadAllBytes("cookies.txt")) | Set-Clipboard
-```
-
-Railway Variables에 추가합니다.
-
-```env
-YTDLP_COOKIES_B64=base64로_변환한_cookies_txt
-```
-
-재배포 후 `/health`에서 아래처럼 보여야 합니다.
-
-```json
-"youtube_cookies": "configured"
-```
-
-### 3. 프록시
-
-쿠키만으로 부족하거나 Railway IP가 강하게 막히면 프록시를 붙입니다.
-
-```env
-YTDLP_PROXY_URL=http://user:password@proxy-host:port
-```
-
-무료 프록시는 YouTube에서 자주 막힙니다. 운영용이면 안정적인 유료 프록시를 권장합니다.
-
-### 4. PO Token 또는 Visitor Data
-
-yt-dlp 공식 문서 기준으로 YouTube는 일부 요청에 PO Token을 요구할 수 있습니다. 이 프로젝트는 아래 변수도 지원합니다.
-
-```env
-YTDLP_VISITOR_DATA=
-YTDLP_PO_TOKEN=
-YTDLP_DATA_SYNC_ID=
-```
-
-PO Token 형식은 yt-dlp 형식을 따릅니다.
+1. 서비스 URL을 엽니다.
+2. 입력창에 아래 URL이 들어 있는지 확인합니다.
 
 ```text
-CLIENT.CONTEXT+PO_TOKEN
+https://ir.tesla.com/webcast-2026-01-28
 ```
 
-예시는 다음과 같습니다.
+3. `URL 시작`을 누릅니다.
+4. 서버가 페이지 내부의 실제 웹캐스트/미디어 URL을 찾아 오디오를 추출합니다.
+5. 영어 STT와 한국어 번역이 화면에 표시됩니다.
 
-```env
-YTDLP_PO_TOKEN=mweb.gvs+YOUR_TOKEN
-```
+## 실시간 자막 방식
+
+- 영어 partial STT가 오면 즉시 영어 자막을 표시합니다.
+- 문장이 끝날 때까지 기다리지 않고 partial 한국어 번역을 계속 시도합니다.
+- AssemblyAI가 `end_of_turn`을 보내면 최종 영어 문장으로 다시 한국어 확정 번역을 만듭니다.
+- 최종 번역은 화면 효과와 함께 기존 초안 자막을 교체합니다.
+
+## 웹캐스트 URL 해석 방식
+
+`https://ir.tesla.com/webcast-2026-01-28` 같은 IR 페이지는 실제 미디어 URL이 페이지 내부 iframe이나 스크립트에 숨어 있을 수 있습니다.
+
+이 프로젝트는 URL 시작 시 아래 순서로 시도합니다.
+
+1. 입력 URL이 직접 미디어 URL인지 확인
+2. `yt-dlp`로 입력 URL 직접 해석
+3. 실패하면 HTML을 받아 iframe, href, src, JSON 안의 URL 후보 탐색
+4. YouTube embed URL은 watch URL로 변환
+5. m3u8, mp4, mp3, YouTube, Brightcove, livestream, ON24, Akamai, CloudFront 후보를 다시 해석
+6. 성공한 실제 오디오를 ffmpeg로 16kHz PCM 변환
+
+## 주의
+
+- Tesla IR 페이지 내부가 YouTube로 연결되어 있고 Railway가 그 YouTube URL을 차단하면 쿠키/프록시가 필요할 수 있습니다.
+- API key와 쿠키는 GitHub에 올리지 말고 Railway Variables에만 넣으세요.
 
 ## 로컬 실행
 
@@ -171,7 +119,7 @@ YTDLP_PO_TOKEN=mweb.gvs+YOUR_TOKEN
 $env:ASSEMBLYAI_API_KEY="your_assemblyai_key"
 $env:OPENAI_API_KEY="your_openai_key"
 $env:OPENAI_MODEL="gpt-4.1-mini"
-$env:DEFAULT_STREAM_URL="https://www.youtube.com/watch?v=replace-with-video-id"
+$env:DEFAULT_STREAM_URL="https://ir.tesla.com/webcast-2026-01-28"
 ```
 
 ```bash
@@ -184,9 +132,3 @@ uvicorn app.main:app --app-dir apps/gateway --host 0.0.0.0 --port 8080
 ```text
 http://localhost:8080
 ```
-
-## 주의
-
-- YouTube URL은 메인 입력입니다.
-- 하지만 YouTube가 Railway 서버 접근을 막으면 `YTDLP_COOKIES_B64`, `YTDLP_PROXY_URL`, 또는 `YTDLP_PO_TOKEN`이 필요할 수 있습니다.
-- API key와 쿠키는 GitHub에 올리지 말고 Railway Variables에만 넣으세요.

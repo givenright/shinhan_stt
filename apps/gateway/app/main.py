@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-import json
 import time
 from collections import deque
 from collections.abc import AsyncGenerator
@@ -157,57 +156,6 @@ async def ui_ws(ws: WebSocket) -> None:
         if session_task and not session_task.done():
             session_task.cancel()
             await asyncio.gather(session_task, return_exceptions=True)
-
-
-@app.websocket("/ws/browser-audio")
-async def browser_audio_ws(ws: WebSocket) -> None:
-    await ws.accept()
-    queue: asyncio.Queue[bytes | None] = asyncio.Queue(maxsize=100)
-    stt = AssemblyAIStreamingClient()
-
-    async def audio() -> AsyncGenerator[bytes, None]:
-        while True:
-            chunk = await queue.get()
-            if chunk is None:
-                break
-            yield chunk
-
-    session_task = asyncio.create_task(
-        run_stt_translation_session(
-            ws,
-            stt.stream(audio()),
-            starting_message="관리자 오디오 송출이 STT에 연결되었습니다.",
-            broadcast=True,
-        )
-    )
-    try:
-        while True:
-            message = await ws.receive()
-            if message.get("bytes") is not None:
-                chunk = message["bytes"]
-                if queue.full():
-                    try:
-                        queue.get_nowait()
-                    except asyncio.QueueEmpty:
-                        pass
-                await queue.put(chunk)
-            elif message.get("text"):
-                try:
-                    payload = json.loads(message["text"])
-                except json.JSONDecodeError:
-                    continue
-                if payload.get("type") == "stop":
-                    break
-            elif message.get("type") == "websocket.disconnect":
-                break
-    except WebSocketDisconnect:
-        pass
-    finally:
-        await queue.put(None)
-        if not session_task.done():
-            session_task.cancel()
-        await asyncio.gather(session_task, return_exceptions=True)
-        await caption_hub.broadcast({"type": "status", "level": "info", "message": "관리자 오디오 송출이 종료되었습니다."})
 
 
 async def run_url_session(ws: WebSocket, url: str, *, broadcast: bool = False) -> None:

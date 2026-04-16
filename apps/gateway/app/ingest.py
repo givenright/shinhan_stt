@@ -3,13 +3,16 @@ from __future__ import annotations
 import asyncio
 import base64
 import os
+import re
 import subprocess
 import tempfile
 import time
 from collections.abc import AsyncGenerator
 from pathlib import Path
 from typing import Any
+from urllib.parse import parse_qs, urljoin, urlparse
 
+import httpx
 import yt_dlp
 
 from .settings import settings
@@ -65,6 +68,85 @@ class URLAudioSource:
                 return str(candidates[-1]["url"])
         raise RuntimeError("Could not resolve a playable media URL.")
 
+    def _is_direct_media_url(self, url: str) -> bool:
+        lowered = url.lower().split("?", 1)[0]
+        return lowered.endswith((".m3u8", ".mp4", ".ts", ".webm", ".mp3", ".wav", ".m4a", ".aac"))
+
+    def _html_headers(self) -> dict[str, str]:
+        return {
+            "User-Agent": (
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+                "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+            ),
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+            "Accept-Language": "en-US,en;q=0.9,ko;q=0.8",
+        }
+
+    def _webpage_candidates(self, page_url: str) -> list[str]:
+        try:
+            with httpx.Client(headers=self._html_headers(), follow_redirects=True, timeout=20.0) as client:
+                response = client.get(page_url)
+                response.raise_for_status()
+        except Exception:
+            return []
+
+        html = response.text
+        candidates: list[str] = []
+        raw_matches: list[str] = []
+        raw_matches.extend(re.findall(r"""(?:src|href|data-url|data-src)=["']([^"']+)["']""", html, flags=re.I))
+        raw_matches.extend(re.findall(r"""https?:\\/\\/[^"'<>\s]+""", html))
+        raw_matches.extend(re.findall(r"""https?://[^"'<>\s]+""", html))
+
+        for raw in raw_matches:
+            cleaned = raw.replace("\\/", "/").replace("&amp;", "&").strip()
+            if not cleaned or cleaned.startswith(("data:", "mailto:", "tel:")):
+                continue
+            absolute = urljoin(str(response.url), cleaned)
+            normalized = self._normalize_candidate_url(absolute)
+            if normalized and normalized not in candidates:
+                candidates.append(normalized)
+
+        ranked = sorted(candidates, key=self._candidate_rank)
+        return ranked[:20]
+
+    def _normalize_candidate_url(self, url: str) -> str | None:
+        parsed = urlparse(url)
+        host = parsed.netloc.lower()
+        path = parsed.path
+        if "youtube.com" in host and path.startswith("/embed/"):
+            video_id = path.split("/embed/", 1)[1].split("/", 1)[0]
+            if video_id:
+                return f"https://www.youtube.com/watch?v={video_id}"
+        if "youtube.com" in host and path.startswith("/live/"):
+            video_id = path.split("/live/", 1)[1].split("/", 1)[0]
+            if video_id:
+                return f"https://www.youtube.com/watch?v={video_id}"
+        if "youtube.com" in host and path == "/watch":
+            video_id = parse_qs(parsed.query).get("v", [""])[0]
+            if video_id:
+                return f"https://www.youtube.com/watch?v={video_id}"
+        if "youtu.be" in host:
+            video_id = path.strip("/").split("/", 1)[0]
+            if video_id:
+                return f"https://www.youtube.com/watch?v={video_id}"
+        if self._is_direct_media_url(url):
+            return url
+        if any(domain in host for domain in ("youtube.com", "youtu.be", "vimeo.com", "brightcove", "livestream", "on24", "q4cdn", "akamaized", "cloudfront")):
+            return url
+        return None
+
+    def _candidate_rank(self, url: str) -> tuple[int, str]:
+        lowered = url.lower()
+        if ".m3u8" in lowered:
+            return (0, url)
+        if "youtube.com/watch" in lowered or "youtu.be" in lowered:
+            return (1, url)
+        if any(item in lowered for item in ("brightcove", "livestream", "on24")):
+            return (2, url)
+        if self._is_direct_media_url(url):
+            return (3, url)
+        return (9, url)
+
     def _ydl_opts(self, use_impersonate: bool) -> dict[str, object]:
         youtube_args: dict[str, list[str]] = {
             "player_client": [item.strip() for item in settings.ytdlp_player_clients.split(",") if item.strip()],
@@ -106,26 +188,34 @@ class URLAudioSource:
         return ydl_opts
 
     def _resolve_url(self) -> str:
-        lowered = self.url.lower()
-        if lowered.endswith((".m3u8", ".mp4", ".ts", ".webm", ".mp3", ".wav", ".m4a")):
+        if self._is_direct_media_url(self.url):
             self._resolved_headers = {}
             return self.url
 
+        candidates = [self.url]
+        candidates.extend(candidate for candidate in self._webpage_candidates(self.url) if candidate != self.url)
+        tried: list[str] = []
         attempts = [bool(settings.ytdlp_impersonate), False]
         last_error: BaseException | None = None
-        for use_impersonate in dict.fromkeys(attempts):
-            try:
-                with yt_dlp.YoutubeDL(self._ydl_opts(use_impersonate)) as ydl:
-                    info = ydl.extract_info(self.url, download=False)
-                    self._resolved_headers = {
-                        str(k): str(v) for k, v in (info.get("http_headers") or {}).items() if v
-                    }
-                    return self._best_media_url(info)
-            except Exception as exc:
-                last_error = exc
-                if not use_impersonate:
-                    break
-        raise RuntimeError(f"yt-dlp URL resolve failed: {_format_exception(last_error)}")
+        for candidate in candidates:
+            tried.append(candidate)
+            if self._is_direct_media_url(candidate):
+                self._resolved_headers = {}
+                return candidate
+            for use_impersonate in dict.fromkeys(attempts):
+                try:
+                    with yt_dlp.YoutubeDL(self._ydl_opts(use_impersonate)) as ydl:
+                        info = ydl.extract_info(candidate, download=False)
+                        self._resolved_headers = {
+                            str(k): str(v) for k, v in (info.get("http_headers") or {}).items() if v
+                        }
+                        return self._best_media_url(info)
+                except Exception as exc:
+                    last_error = exc
+                    if not use_impersonate:
+                        break
+        tried_text = ", ".join(tried[:6])
+        raise RuntimeError(f"yt-dlp URL resolve failed after trying [{tried_text}]: {_format_exception(last_error)}")
 
     def _ffmpeg_input_args(self, media_url: str) -> list[str]:
         args = [
