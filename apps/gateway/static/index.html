@@ -29,6 +29,7 @@ h1{font-size:20px}
 .stats b{color:#d9e8ff;font-weight:800}
 .stage{position:relative;background:#050508;min-height:430px;display:flex;align-items:center;justify-content:center;padding:20px}
 .wave{width:min(620px,100%);min-height:280px;display:flex;flex-direction:column;justify-content:center;gap:16px}
+.thumbnail{width:min(460px,100%);align-self:center;border-radius:8px;border:1px solid rgba(255,255,255,.14);background:#fff;box-shadow:0 16px 40px rgba(0,0,0,.32)}
 .meter{height:92px;display:flex;align-items:end;justify-content:center;gap:8px;padding:10px 0}
 .bar{width:16px;border-radius:5px 5px 0 0;background:#2fb98f;min-height:14px;animation:pulse 1.15s ease-in-out infinite}
 .bar:nth-child(2){animation-delay:.12s;background:#3d84d7}.bar:nth-child(3){animation-delay:.24s}.bar:nth-child(4){animation-delay:.36s;background:#d4ad45}.bar:nth-child(5){animation-delay:.48s}
@@ -44,7 +45,7 @@ h1{font-size:20px}
 .ko{font-size:17px;color:#f4f7fb;line-height:1.65;white-space:pre-wrap;overflow-wrap:anywhere}
 .en{font-size:13px;color:#8b93a3;line-height:1.6;margin-top:9px;padding-top:9px;border-top:1px solid #252536;white-space:pre-wrap;overflow-wrap:anywhere}
 .draft{border-left:3px solid #ba7517}.final{border-left:3px solid #1d9e75}
-.feed{display:flex;flex-direction:column;gap:8px;max-height:430px;overflow:auto}
+.feed{display:flex;flex-direction:column;gap:8px;height:560px;max-height:62vh;overflow:auto;padding-right:4px;scroll-behavior:smooth}
 .mini{font-size:12px;color:#646b78;line-height:1.6}
 @keyframes pulse{0%,100%{height:18px;opacity:.48}50%{height:88px;opacity:1}}
 @keyframes swapCaption{0%{opacity:.35;transform:translateY(5px)}100%{opacity:1;transform:translateY(0)}}
@@ -80,6 +81,7 @@ h1{font-size:20px}
       </div>
       <div class="stage">
         <div class="wave">
+          <img class="thumbnail" src="/static/tesla-thumbnail.png" alt="Tesla 2026 Q1 Financial Results">
           <div class="meter" aria-hidden="true">
             <span class="bar"></span><span class="bar"></span><span class="bar"></span><span class="bar"></span><span class="bar"></span>
           </div>
@@ -138,6 +140,8 @@ let captureSource = null;
 let audioPackets = 0;
 let audioBytes = 0;
 let lastAudioNoticeAt = 0;
+let pendingAudioBuffers = [];
+const AudioContextClass = window.AudioContext || window.webkitAudioContext;
 const segments = new Map();
 
 function esc(value) {
@@ -175,10 +179,12 @@ function resetUi() {
   setCaptions("English captions waiting", "Korean captions waiting");
 }
 function renderFeed() {
-  const items = [...segments.values()].filter(item => !item.partial).sort((a, b) => b.seq - a.seq).slice(0, 10);
+  const shouldStickToBottom = feed.scrollTop + feed.clientHeight >= feed.scrollHeight - 40;
+  const items = [...segments.values()].filter(item => !item.partial).sort((a, b) => a.seq - b.seq).slice(-80);
   feed.innerHTML = items.length
     ? items.map(item => `<div class="card final"><div class="head"><span class="label">${esc(item.id)}</span><span class="pill">${item.transMs ? item.transMs + "ms" : "Translating"}</span></div><div class="ko">${esc(item.ko || "Translating...")}</div><div class="en">${esc(item.en || "Waiting for English...")}</div></div>`).join("")
     : '<div class="mini">No confirmed segments yet.</div>';
+  if (shouldStickToBottom) feed.scrollTop = feed.scrollHeight;
 }
 function handlePayload(payload) {
   if (payload.type === "reset") {
@@ -252,17 +258,27 @@ function connectViewer() {
   viewerWs.onerror = () => setStatus("Broadcast connection error.", "error");
 }
 async function enableAudio() {
-  playbackContext = playbackContext || new AudioContext();
-  await playbackContext.resume();
-  const silent = playbackContext.createBuffer(1, 1, playbackContext.sampleRate);
-  const unlock = playbackContext.createBufferSource();
-  unlock.buffer = silent;
-  unlock.connect(playbackContext.destination);
-  unlock.start();
-  playbackTime = Math.max(playbackContext.currentTime + 0.12, playbackTime);
-  audioBtn.textContent = "Audio Enabled";
-  audioState.textContent = "enabled";
-  setStatus("Audio playback enabled.", "success");
+  try {
+    if (!AudioContextClass) {
+      throw new Error("This browser does not support Web Audio playback.");
+    }
+    playbackContext = playbackContext || new AudioContextClass();
+    await playbackContext.resume();
+    const silent = playbackContext.createBuffer(1, 1, playbackContext.sampleRate);
+    const unlock = playbackContext.createBufferSource();
+    unlock.buffer = silent;
+    unlock.connect(playbackContext.destination);
+    unlock.start();
+    playbackTime = Math.max(playbackContext.currentTime + 0.12, playbackTime);
+    audioBtn.textContent = "Audio Enabled";
+    audioState.textContent = "enabled";
+    setStatus("Audio playback enabled.", "success");
+    const backlog = pendingAudioBuffers.splice(0);
+    for (const buffer of backlog) await playPcm(buffer);
+  } catch (error) {
+    audioState.textContent = "blocked";
+    setStatus("Audio unlock failed: " + (error.message || String(error)), "error");
+  }
 }
 async function playPcm(arrayBuffer) {
   if (!arrayBuffer || arrayBuffer.byteLength < 2) return;
@@ -271,6 +287,8 @@ async function playPcm(arrayBuffer) {
   audioPacketsEl.textContent = String(audioPackets);
   audioKbEl.textContent = String(Math.round(audioBytes / 1024));
   if (!playbackContext) {
+    pendingAudioBuffers.push(arrayBuffer);
+    pendingAudioBuffers = pendingAudioBuffers.slice(-30);
     const now = Date.now();
     if (now - lastAudioNoticeAt > 3000) {
       lastAudioNoticeAt = now;
@@ -409,6 +427,9 @@ function stopAll() {
   setStatus("Stopped.");
 }
 audioBtn.onclick = enableAudio;
+document.addEventListener("pointerdown", () => {
+  if (!playbackContext && audioPackets > 0) enableAudio();
+}, {passive: true});
 adminBtn.onclick = () => startAdminBroadcast().catch(error => setStatus(error.message || String(error), "error"));
 streamUrlInput.addEventListener("change", startUrlFallback);
 stopBtn.onclick = stopAll;
