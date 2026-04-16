@@ -20,7 +20,7 @@ from .translation import Translator
 class CaptionHub:
     def __init__(self) -> None:
         self.clients: set[WebSocket] = set()
-        self.history: deque[dict] = deque(maxlen=40)
+        self.history: deque[dict] = deque(maxlen=60)
         self.lock = asyncio.Lock()
 
     async def subscribe(self, ws: WebSocket) -> None:
@@ -56,12 +56,14 @@ class CaptionHub:
 
         async with self.lock:
             clients = list(self.clients)
+
         dead: list[WebSocket] = []
         for client in clients:
             try:
                 await client.send_json(payload)
             except Exception:
                 dead.append(client)
+
         if dead:
             async with self.lock:
                 for client in dead:
@@ -148,7 +150,7 @@ async def ui_ws(ws: WebSocket) -> None:
                     session_task.cancel()
                     await asyncio.gather(session_task, return_exceptions=True)
                 await ws.send_json({"type": "status", "level": "info", "message": "세션을 중지했습니다."})
-                await caption_hub.broadcast({"type": "status", "level": "info", "message": "관리자 URL 송출이 중지되었습니다."})
+                await caption_hub.broadcast({"type": "status", "level": "info", "message": "관리자 URL 송출을 중지했습니다."})
     except WebSocketDisconnect:
         pass
     finally:
@@ -160,7 +162,7 @@ async def ui_ws(ws: WebSocket) -> None:
 @app.websocket("/ws/browser-audio")
 async def browser_audio_ws(ws: WebSocket) -> None:
     await ws.accept()
-    queue: asyncio.Queue[bytes | None] = asyncio.Queue(maxsize=80)
+    queue: asyncio.Queue[bytes | None] = asyncio.Queue(maxsize=100)
     stt = AssemblyAIStreamingClient()
 
     async def audio() -> AsyncGenerator[bytes, None]:
@@ -263,15 +265,14 @@ async def run_stt_translation_session(ws: WebSocket, events, starting_message: s
 
     async def translate_partial_snapshot(text: str, turn_order: int, version: int) -> None:
         started = time.time()
+        await send({"type": "translation_start", "segment_id": f"partial_{turn_order}", "seq": turn_order})
         try:
             korean, trans_ms = await translator.translate(text, list(context), partial=True)
         except Exception as exc:
             await send({"type": "partial_translation_error", "message": _format_exception(exc)})
             return
 
-        if not korean or turn_order in finalized_turns:
-            return
-        if version < int(latest_partial["version"]) - 2:
+        if not korean:
             return
         await send(
             {
@@ -294,11 +295,13 @@ async def run_stt_translation_session(ws: WebSocket, events, starting_message: s
                 partial_event.clear()
             except TimeoutError:
                 pass
+
             text = str(latest_partial["text"]).strip()
             turn_order = int(latest_partial["turn_order"])
             version = int(latest_partial["version"])
             now = time.monotonic()
-            if not _should_partial_translate(text) or turn_order in finalized_turns:
+
+            if not _should_partial_translate(text):
                 continue
             if text == last_started_text:
                 continue
@@ -380,16 +383,11 @@ async def run_stt_translation_session(ws: WebSocket, events, starting_message: s
                 continue
 
             text = event.text.strip()
-            if event.turn_order in finalized_turns:
-                continue
-
             await send({"type": "partial", "text": text, "turn_order": event.turn_order})
             schedule_partial_translation(text, event.turn_order)
 
             if event.end_of_turn:
                 schedule_finalize(event, 0.0)
-            elif _looks_sentence_complete(text):
-                schedule_finalize(event, settings.final_punctuation_delay)
 
         if pending_finalize:
             await asyncio.gather(*pending_finalize.values(), return_exceptions=True)
@@ -435,15 +433,8 @@ def _user_facing_error(exc: BaseException) -> str:
     return f"처리 중 오류가 발생했습니다. 상세: {detail}"
 
 
-def _looks_sentence_complete(text: str) -> bool:
-    stripped = text.rstrip()
-    if len(stripped) < 12:
-        return False
-    return stripped.endswith((".", "?", "!"))
-
-
 def _should_partial_translate(text: str) -> bool:
     stripped = text.strip()
-    if len(stripped) < 3:
+    if len(stripped) < 2:
         return False
     return any(char.isalpha() for char in stripped)
