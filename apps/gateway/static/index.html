@@ -148,6 +148,7 @@ let adminWs = null;
 let urlWs = null;
 let playbackContext = null;
 let playbackDestination = null;
+let useMediaElementOutput = false;
 let playbackTime = 0;
 let captureStream = null;
 let captureContext = null;
@@ -300,10 +301,15 @@ async function enableAudio() {
       throw new Error("This browser does not support Web Audio playback.");
     }
     playbackContext = playbackContext || new AudioContextClass();
-    playbackDestination = playbackDestination || playbackContext.createMediaStreamDestination();
-    if (!phoneAudio.srcObject) phoneAudio.srcObject = playbackDestination.stream;
+    if (!playbackDestination && playbackContext.createMediaStreamDestination) {
+      playbackDestination = playbackContext.createMediaStreamDestination();
+      phoneAudio.srcObject = playbackDestination.stream;
+      phoneAudio.volume = 1;
+      phoneAudio.muted = false;
+      useMediaElementOutput = true;
+    }
     await playbackContext.resume();
-    await phoneAudio.play().catch(() => {});
+    if (useMediaElementOutput) await phoneAudio.play().catch(() => {});
     const silent = playbackContext.createBuffer(1, 1, playbackContext.sampleRate);
     const unlock = playbackContext.createBufferSource();
     unlock.buffer = silent;
@@ -351,8 +357,11 @@ async function playPcm(arrayBuffer) {
   for (let i = 0; i < samples.length; i += 1) channel[i] = Math.max(-1, Math.min(1, samples[i] / 32768));
   const source = playbackContext.createBufferSource();
   source.buffer = audioBuffer;
-  source.connect(playbackContext.destination);
-  if (playbackDestination) source.connect(playbackDestination);
+  if (useMediaElementOutput && playbackDestination) {
+    source.connect(playbackDestination);
+  } else {
+    source.connect(playbackContext.destination);
+  }
   if (playbackTime > playbackContext.currentTime + 1.5) {
     playbackTime = playbackContext.currentTime + 0.08;
   }
