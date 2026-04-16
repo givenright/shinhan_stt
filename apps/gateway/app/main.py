@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import time
 from collections import deque
 from collections.abc import AsyncGenerator
@@ -16,8 +17,60 @@ from .settings import settings
 from .translation import Translator
 
 
+class CaptionHub:
+    def __init__(self) -> None:
+        self.clients: set[WebSocket] = set()
+        self.history: deque[dict] = deque(maxlen=40)
+        self.lock = asyncio.Lock()
+
+    async def subscribe(self, ws: WebSocket) -> None:
+        async with self.lock:
+            self.clients.add(ws)
+            history = list(self.history)
+        await ws.send_json({"type": "reset"})
+        await ws.send_json({"type": "status", "level": "info", "message": "실시간 자막 방송을 수신 중입니다."})
+        for payload in history:
+            await ws.send_json(payload)
+
+    async def unsubscribe(self, ws: WebSocket) -> None:
+        async with self.lock:
+            self.clients.discard(ws)
+
+    async def broadcast(self, payload: dict) -> None:
+        if payload.get("type") not in {
+            "reset",
+            "status",
+            "error",
+            "partial",
+            "partial_ko",
+            "partial_translation_error",
+            "translation_start",
+            "translation_error",
+            "segment",
+        }:
+            return
+        if payload.get("type") == "reset":
+            self.history.clear()
+        elif payload.get("type") != "status":
+            self.history.append(payload)
+
+        async with self.lock:
+            clients = list(self.clients)
+        dead: list[WebSocket] = []
+        for client in clients:
+            try:
+                await client.send_json(payload)
+            except Exception:
+                dead.append(client)
+        if dead:
+            async with self.lock:
+                for client in dead:
+                    self.clients.discard(client)
+
+
 app = FastAPI(title="shinhan-live-stt")
 translator: Translator | None = None
+caption_hub = CaptionHub()
 STATIC_DIR = Path(__file__).resolve().parent.parent / "static"
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
@@ -40,12 +93,13 @@ async def index() -> FileResponse:
 
 
 @app.get("/health")
-async def health() -> dict[str, str]:
+async def health() -> dict[str, str | int]:
     return {
         "status": "ok",
         "stt": "assemblyai",
         "translation": "openai",
         "model": settings.openai_model,
+        "viewer_clients": len(caption_hub.clients),
         "youtube_cookies": "configured" if _youtube_cookies_configured() else "missing",
         "youtube_proxy": "configured" if settings.ytdlp_proxy_url else "missing",
         "youtube_impersonate": settings.ytdlp_impersonate or "disabled",
@@ -64,6 +118,19 @@ async def config() -> dict[str, str | bool]:
     }
 
 
+@app.websocket("/ws/viewer")
+async def viewer_ws(ws: WebSocket) -> None:
+    await ws.accept()
+    await caption_hub.subscribe(ws)
+    try:
+        while True:
+            await ws.receive_text()
+    except WebSocketDisconnect:
+        pass
+    finally:
+        await caption_hub.unsubscribe(ws)
+
+
 @app.websocket("/ws/ui")
 async def ui_ws(ws: WebSocket) -> None:
     await ws.accept()
@@ -75,12 +142,13 @@ async def ui_ws(ws: WebSocket) -> None:
                 if session_task and not session_task.done():
                     session_task.cancel()
                     await asyncio.gather(session_task, return_exceptions=True)
-                session_task = asyncio.create_task(run_url_session(ws, payload["url"]))
+                session_task = asyncio.create_task(run_url_session(ws, payload["url"], broadcast=True))
             elif payload.get("type") == "stop":
                 if session_task and not session_task.done():
                     session_task.cancel()
                     await asyncio.gather(session_task, return_exceptions=True)
                 await ws.send_json({"type": "status", "level": "info", "message": "세션을 중지했습니다."})
+                await caption_hub.broadcast({"type": "status", "level": "info", "message": "관리자 URL 송출이 중지되었습니다."})
     except WebSocketDisconnect:
         pass
     finally:
@@ -89,7 +157,58 @@ async def ui_ws(ws: WebSocket) -> None:
             await asyncio.gather(session_task, return_exceptions=True)
 
 
-async def run_url_session(ws: WebSocket, url: str) -> None:
+@app.websocket("/ws/browser-audio")
+async def browser_audio_ws(ws: WebSocket) -> None:
+    await ws.accept()
+    queue: asyncio.Queue[bytes | None] = asyncio.Queue(maxsize=80)
+    stt = AssemblyAIStreamingClient()
+
+    async def audio() -> AsyncGenerator[bytes, None]:
+        while True:
+            chunk = await queue.get()
+            if chunk is None:
+                break
+            yield chunk
+
+    session_task = asyncio.create_task(
+        run_stt_translation_session(
+            ws,
+            stt.stream(audio()),
+            starting_message="관리자 오디오 송출이 STT에 연결되었습니다.",
+            broadcast=True,
+        )
+    )
+    try:
+        while True:
+            message = await ws.receive()
+            if message.get("bytes") is not None:
+                chunk = message["bytes"]
+                if queue.full():
+                    try:
+                        queue.get_nowait()
+                    except asyncio.QueueEmpty:
+                        pass
+                await queue.put(chunk)
+            elif message.get("text"):
+                try:
+                    payload = json.loads(message["text"])
+                except json.JSONDecodeError:
+                    continue
+                if payload.get("type") == "stop":
+                    break
+            elif message.get("type") == "websocket.disconnect":
+                break
+    except WebSocketDisconnect:
+        pass
+    finally:
+        await queue.put(None)
+        if not session_task.done():
+            session_task.cancel()
+        await asyncio.gather(session_task, return_exceptions=True)
+        await caption_hub.broadcast({"type": "status", "level": "info", "message": "관리자 오디오 송출이 종료되었습니다."})
+
+
+async def run_url_session(ws: WebSocket, url: str, *, broadcast: bool = False) -> None:
     source = URLAudioSource(url, settings.ingress_chunk_seconds)
     stt = AssemblyAIStreamingClient()
 
@@ -108,12 +227,13 @@ async def run_url_session(ws: WebSocket, url: str) -> None:
                 f"impersonate={settings.ytdlp_impersonate or 'off'}, "
                 f"clients={settings.ytdlp_player_clients}"
             ),
+            broadcast=broadcast,
         )
     finally:
         await source.stop()
 
 
-async def run_stt_translation_session(ws: WebSocket, events, starting_message: str) -> None:
+async def run_stt_translation_session(ws: WebSocket, events, starting_message: str, *, broadcast: bool = False) -> None:
     assert translator is not None
     send_lock = asyncio.Lock()
     context: deque[str] = deque(maxlen=settings.translation_context_size)
@@ -129,6 +249,8 @@ async def run_stt_translation_session(ws: WebSocket, events, starting_message: s
     async def send(payload: dict) -> None:
         async with send_lock:
             await ws.send_json(payload)
+        if broadcast:
+            await caption_hub.broadcast(payload)
 
     def segment_for(event: SttEvent) -> tuple[str, int]:
         nonlocal segment_seq
@@ -307,7 +429,7 @@ def _user_facing_error(exc: BaseException) -> str:
     if "Sign in to confirm" in detail or "not a bot" in detail:
         return (
             "YouTube가 Railway 서버를 봇으로 판정했습니다. "
-            "YouTube를 메인으로 운영하려면 운영용 쿠키 또는 프록시가 필요합니다. "
+            "관리자 오디오 송출 모드를 사용하거나, 운영용 쿠키/프록시를 설정하세요. "
             f"상세: {detail}"
         )
     return f"처리 중 오류가 발생했습니다. 상세: {detail}"
