@@ -236,6 +236,8 @@ function handlePayload(payload) {
     setCaptions(undefined, payload.text || "");
   } else if (payload.type === "partial_translation_error") {
     modePill.textContent = "번역 재시도";
+    partialKorean.textContent = "번역 오류: " + (payload.message || "알 수 없는 오류");
+    setStatus(partialKorean.textContent, "error");
   } else if (payload.type === "translation_start") {
     modePill.textContent = "번역 중";
     const item = segments.get(payload.segment_id) || {id: payload.segment_id, seq: payload.seq, en: "", ko: "", transMs: 0};

@@ -26,7 +26,8 @@ class Settings:
     openai_timeout = _float("OPENAI_TIMEOUT", 20.0)
     translation_context_size = int(os.getenv("TRANSLATION_CONTEXT_SIZE", "4"))
     partial_translation_delay = _float("PARTIAL_TRANSLATION_DELAY", 0.0)
-    partial_translation_interval = _float("PARTIAL_TRANSLATION_INTERVAL", 0.65)
+    partial_translation_interval = _float("PARTIAL_TRANSLATION_INTERVAL", 1.0)
+    partial_translation_concurrency = int(os.getenv("PARTIAL_TRANSLATION_CONCURRENCY", "3"))
     final_punctuation_delay = _float("FINAL_PUNCTUATION_DELAY", 0.25)
 
     default_stream_url = os.getenv("DEFAULT_STREAM_URL", os.getenv("YOUTUBE_URL", ""))

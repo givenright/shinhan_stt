@@ -120,6 +120,7 @@ async def run_stt_translation_session(ws: WebSocket, events, starting_message: s
 
     latest_partial: dict[str, object] = {"text": "", "turn_order": -1, "version": 0}
     partial_event = asyncio.Event()
+    partial_tasks: set[asyncio.Task] = set()
 
     async def send(payload: dict) -> None:
         async with send_lock:
@@ -134,43 +135,57 @@ async def run_stt_translation_session(ws: WebSocket, events, starting_message: s
             segment_seq += 1
         return segment_id, int(segment_id.split("_")[-1])
 
-    async def partial_translation_worker() -> None:
-        last_translated_text = ""
-        while True:
-            await partial_event.wait()
-            partial_event.clear()
-            if settings.partial_translation_delay > 0:
-                await asyncio.sleep(settings.partial_translation_delay)
+    async def translate_partial_snapshot(text: str, turn_order: int, version: int) -> None:
+        started = time.time()
+        try:
+            korean, trans_ms = await translator.translate(text, list(context), partial=True)
+        except Exception as exc:
+            await send({"type": "partial_translation_error", "message": _format_exception(exc)})
+            return
 
+        if not korean or turn_order in finalized_turns:
+            return
+        if version < int(latest_partial["version"]) - 2:
+            return
+        await send(
+            {
+                "type": "partial_ko",
+                "text": korean,
+                "source_text": text,
+                "turn_order": turn_order,
+                "version": version,
+                "trans_ms": trans_ms,
+                "total_ms": round((time.time() - started) * 1000),
+            }
+        )
+
+    async def partial_translation_worker() -> None:
+        last_started_text = ""
+        last_started_at = 0.0
+        while True:
+            try:
+                await asyncio.wait_for(partial_event.wait(), timeout=0.1)
+                partial_event.clear()
+            except TimeoutError:
+                pass
             text = str(latest_partial["text"]).strip()
             turn_order = int(latest_partial["turn_order"])
             version = int(latest_partial["version"])
-            if not _should_partial_translate(text) or turn_order in finalized_turns or text == last_translated_text:
+            now = time.monotonic()
+            if not _should_partial_translate(text) or turn_order in finalized_turns:
+                continue
+            if text == last_started_text:
+                continue
+            if now - last_started_at < settings.partial_translation_interval and partial_tasks:
+                continue
+            if len(partial_tasks) >= settings.partial_translation_concurrency:
                 continue
 
-            started = time.time()
-            try:
-                korean, trans_ms = await translator.translate(text, list(context), partial=True)
-            except Exception as exc:
-                await send({"type": "partial_translation_error", "message": _format_exception(exc)})
-                await asyncio.sleep(settings.partial_translation_interval)
-                continue
-
-            if korean and version <= int(latest_partial["version"]) and turn_order not in finalized_turns:
-                last_translated_text = text
-                await send(
-                    {
-                        "type": "partial_ko",
-                        "text": korean,
-                        "turn_order": turn_order,
-                        "trans_ms": trans_ms,
-                        "total_ms": round((time.time() - started) * 1000),
-                    }
-                )
-
-            await asyncio.sleep(settings.partial_translation_interval)
-            if str(latest_partial["text"]).strip() != last_translated_text:
-                partial_event.set()
+            last_started_text = text
+            last_started_at = now
+            task = asyncio.create_task(translate_partial_snapshot(text, turn_order, version))
+            partial_tasks.add(task)
+            task.add_done_callback(partial_tasks.discard)
 
     async def finalize_turn(event: SttEvent, delay: float = 0.0) -> None:
         if delay:
@@ -259,10 +274,13 @@ async def run_stt_translation_session(ws: WebSocket, events, starting_message: s
         await send({"type": "error", "message": _user_facing_error(exc)})
     finally:
         partial_worker.cancel()
+        for task in partial_tasks:
+            if not task.done():
+                task.cancel()
         for task in pending_finalize.values():
             if not task.done():
                 task.cancel()
-        await asyncio.gather(partial_worker, *pending_finalize.values(), return_exceptions=True)
+        await asyncio.gather(partial_worker, *partial_tasks, *pending_finalize.values(), return_exceptions=True)
 
 
 def _youtube_cookies_configured() -> bool:
