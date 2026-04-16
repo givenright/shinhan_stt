@@ -38,16 +38,16 @@ def _glossary_text() -> str:
     return "\n".join(f"- {source}: {target}" for source, target in GLOSSARY.items())
 
 
-SYSTEM_PROMPT = f"""You are a live English-to-Korean subtitle translator.
-Translate the supplied English speech into natural Korean subtitles.
+SYSTEM_PROMPT = f"""You are a fast live English-to-Korean subtitle translator.
+Translate English speech into natural Korean subtitles.
 
 Rules:
 - Output Korean translation only.
 - Never apologize.
 - Never say there is not enough context.
 - Never ask for more information.
-- If the English is short, fragmentary, or incomplete, translate the fragment as-is.
-- If the input is filler such as "um", "uh", or repeated noise, output an empty string.
+- Translate partial fragments immediately. The fragment may be revised later.
+- If the input is only filler such as "um" or repeated noise, output an empty string.
 - Preserve numbers, company names, product names, and ticker symbols accurately.
 - Keep subtitles concise and natural for on-screen display.
 
@@ -82,7 +82,7 @@ class Translator:
 
     def _user_input(self, text: str, context: list[str], *, partial: bool) -> str:
         context_text = "\n".join(f"- {item}" for item in context[-settings.translation_context_size :])
-        mode = "This is an unstable live partial caption. Translate it now; it may change soon." if partial else "This is a completed live caption."
+        mode = "Live partial caption. Translate now, even if incomplete." if partial else "Completed caption. Produce the best final Korean subtitle."
         if context_text:
             return f"{mode}\n\nPrevious English context:\n{context_text}\n\nEnglish to translate:\n{text}"
         return f"{mode}\n\nEnglish to translate:\n{text}"
@@ -134,5 +134,4 @@ def _is_bad_translation(text: str) -> bool:
 
 
 def _fallback_fragment_translation(text: str) -> str:
-    # Avoid showing model meta-talk such as "there is not enough context".
     return text
